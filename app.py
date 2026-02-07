@@ -65,10 +65,17 @@ if 'q_index' not in st.session_state: st.session_state.q_index = 0
 if 'answered' not in st.session_state: st.session_state.answered = False
 
 # --- 5. メイン画面 ---
-st.set_page_config(page_title="Biz Logic Gym AI", page_icon="🧠")
+# --- ブラウザのタブ設定 ---
+st.set_page_config(
+    page_title="コンサル脳を鍛える思考力道場", 
+    page_icon="🥋", # 道場らしく武道の道着アイコン
+    layout="centered"
+)
+
 
 if not st.session_state.game_active:
-    st.title("🧠 Biz Logic Gym: Infinite")
+    st.title("🥋 コンサル脳を鍛える思考力道場")
+　　st.caption("〜 AIが生成する難問で、論理の「型」を研ぎ澄ます 〜")
     st.success(f"接続成功: 使用モデル **{model_name.replace('models/', '')}**")
     st.write("※制限時間はありません。じっくり考えてから回答してください。")
     if st.button("▶ 特訓開始（MECE 3問 + フェルミ 2問）", type="primary"):
@@ -119,3 +126,4 @@ else:
                     with st.spinner(f"AIが{next_cat}問題を生成中..."):
                         st.session_state.current_q = generate_quiz(next_cat)
                 st.rerun()
+
