@@ -35,7 +35,7 @@ def generate_quiz(category_type):
         theme = "フェルミ推定（因数分解のロジック）"
         inst = "3つの選択肢のうち、1つだけが『最も筋の良い計算式』であること。"
 
-    # JSONテンプレートをシンプルに定義
+    # JSONテンプレートを定義
     prompt = f"""
     あなたはコンサルタント育成の師範です。
     実務3年目レベルの「{theme}」の問題を1問作成してください。
@@ -124,4 +124,8 @@ else:
                 st.session_state.q_index += 1
                 st.session_state.answered = False
                 if st.session_state.q_index < 5:
-                    next_cat = "MECE" if st.session_state.q_index < 3 else "フェルミ推定
+                    # ここが修正箇所です（引用符を確実に閉じました）
+                    next_cat = "MECE" if st.session_state.q_index < 3 else "フェルミ推定"
+                    with st.spinner("次の問題を生成中..."):
+                        st.session_state.current_q = generate_quiz(next_cat)
+                st.rerun()
