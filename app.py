@@ -3,87 +3,104 @@ import google.generativeai as genai
 import json
 import time
 
-# --- 1. Gemini API設定 ---
+# --- 1. API設定 ---
 def init_gemini():
     # Secretsチェック
     if "GEMINI_API_KEY" not in st.secrets:
-        st.error("エラー: Secretsに GEMINI_API_KEY が設定されていません。")
+        st.error("エラー: Secretsに GEMINI_API_KEY がありません。")
         st.stop()
     
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     
-    # モデル接続テスト（自動選択）
+    # 接続テスト
     try:
         models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        priority = ["models/gemini-1.5-flash", "models/gemini-1.5-pro", "models/gemini-pro"]
-        target = next((m for m in priority if m in models), models[0] if models else None)
-        
-        if not target: raise Exception("有効なモデルが見つかりません")
-        return genai.GenerativeModel(target), target
-    except Exception as e:
-        st.error(f"接続エラー: {e}")
+        target = next((m for m in ["models/gemini-1.5-flash", "models/gemini-pro"] if m in models), models[0] if models else None)
+        return genai.GenerativeModel(target)
+    except:
+        st.error("AIへの接続に失敗しました。")
         st.stop()
 
-model, model_name_used = init_gemini()
+model = init_gemini()
 
-# --- 2. 問題生成関数 (営業実戦仕様) ---
-def generate_quiz(category_type):
-    if category_type == "MECE":
-        theme = "営業現場での顧客課題の構造化"
-        inst = "若手営業（1-3年目）が顧客ニーズを整理するシーン。3択。"
-    else:
-        theme = "営業のための数値予測（フェルミ推定）"
-        inst = "市場規模や予算規模を論理的に推計する営業シーン。3択。"
-
-    # プロンプト（営業・コンサル融合視点）
-    prompt = f"""
-    あなたは営業とコンサルの経験を持つマネージャーです。
-    「{theme}」について、入社1〜3年目の営業職向けの問題を1問作成してください。
+# --- 2. 問題生成 ---
+def generate_quiz(cat):
+    theme = "営業現場のMECE(構造化)" if cat == "MECE" else "営業のためのフェルミ推定"
+    inst = "若手営業(1-3年目)向けの実戦問題。3択。"
     
-    【条件】
-    1. 現場で起こりうる具体的な営業シーン（ヒアリング、提案、分析など）設定。
-    2. {inst}
-    3. 以下のJSON形式(日本語)のみを出力すること。
-
+    # プロンプト（テンプレートを明確化）
+    prompt = f"""
+    あなたは営業マネージャーです。「{theme}」について、{inst}
+    以下のJSON形式(日本語)のみを出力してください:
     {{
         "title": "タイトル",
-        "q": "問題文",
-        "opts": ["選択肢A", "選択肢B", "選択肢C"],
+        "q": "問題文(現場のシーン設定)",
+        "opts": ["A", "B", "C"],
         "cor": "正解の選択肢",
-        "exp": "マネージャーからの実戦的アドバイス"
+        "exp": "解説(アドバイス)"
     }}
     """
-    
     try:
-        response = model.generate_content(prompt)
-        text = response.text.replace('```json', '').replace('```', '').strip()
-        return json.loads(text)
+        res = model.generate_content(prompt)
+        return json.loads(res.text.replace('```json', '').replace('```', '').strip())
     except:
-        return {
-            "title": "通信エラー", "q": "再読み込みしてください", 
-            "opts": ["再試行"], "cor": "再試行", "exp": "エラー"
-        }
+        return {"title": "通信エラー", "q": "再読み込みしてください", "opts": ["再試行"], "cor": "再試行", "exp": "エラー"}
 
-# --- 3. メイン画面設定 ---
-st.set_page_config(page_title="営業思考力道場", page_icon="💼", layout="centered")
+# --- 3. メイン画面 ---
+st.set_page_config(page_title="営業思考道場", page_icon="💼")
 
-if 'game_active' not in st.session_state: st.session_state.game_active = False
+# セッション初期化
+if 'game' not in st.session_state: st.session_state.game = False
 if 'score' not in st.session_state: st.session_state.score = 0
-if 'q_index' not in st.session_state: st.session_state.q_index = 0
-if 'answered' not in st.session_state: st.session_state.answered = False
+if 'idx' not in st.session_state: st.session_state.idx = 0
+if 'ans' not in st.session_state: st.session_state.ans = False
 
-if not st.session_state.game_active:
+# スタート画面
+if not st.session_state.game:
     st.title("💼 営業×コンサル思考道場")
-    st.caption("〜若手営業（1-3年目）向け 実戦トレーニング〜")
+    st.info("若手営業向け：顧客課題の構造化(MECE)と数値試算(フェルミ)の特訓。制限時間なし。")
     
-    st.info("""
-    **【特訓内容】**
-    顧客の課題を整理し、数字で語れる「ソリューション営業」を目指します。
-    - **前半3問 (MECE)**：顧客情報の整理・構造化
-    - **後半2問 (フェルミ)**：市場規模・ポテンシャルの試算
-    ※制限時間はありません。
-    """)
-    
-    if st.button("▶ 特訓を開始する", type="primary", use_container_width=True):
+    if st.button("特訓を開始する", type="primary"):
+        st.session_state.game = True
         st.session_state.score = 0
-        st.session_state
+        st.session_state.idx = 0
+        st.session_state.ans = False
+        with st.spinner("課題を作成中..."):
+            st.session_state.q = generate_quiz("MECE")
+        st.rerun()
+
+# クイズ画面
+else:
+    if st.session_state.idx >= 5:
+        st.balloons()
+        st.title("完了")
+        st.write(f"スコア: {st.session_state.score}/5")
+        if st.button("戻る"):
+            st.session_state.game = False
+            st.rerun()
+    else:
+        q = st.session_state.q
+        cat = "MECE" if st.session_state.idx < 3 else "フェルミ"
+        st.subheader(f"第{st.session_state.idx + 1}問 ({cat})")
+        st.info(f"**{q['title']}**\n\n{q['q']}")
+        
+        if not st.session_state.ans:
+            for opt in q['opts']:
+                if st.button(opt, use_container_width=True):
+                    st.session_state.ans = True
+                    st.session_state.last_res = (opt == q['cor'])
+                    if st.session_state.last_res: st.session_state.score += 1
+                    st.rerun()
+        else:
+            if st.session_state.last_res: st.success("⭕ 正解")
+            else: st.error(f"❌ 不正解... 正解: {q['cor']}")
+            st.write(f"**解説:** {q['exp']}")
+            
+            if st.button("次へ", type="primary"):
+                st.session_state.idx += 1
+                st.session_state.ans = False
+                if st.session_state.idx < 5:
+                    next_cat = "MECE" if st.session_state.idx < 3 else "フェルミ"
+                    with st.spinner("次へ..."):
+                        st.session_state.q = generate_quiz(next_cat)
+                st.rerun()
