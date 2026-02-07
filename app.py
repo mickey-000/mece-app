@@ -1,129 +1,64 @@
 import streamlit as st
 import google.generativeai as genai
-import time
 import json
+import time
 
-# --- 1. Gemini API設定（動的モデル検出） ---
+# ==========================================
+# 1. Gemini API設定 (最強の接続ロジック)
+# ==========================================
 def init_gemini():
+    # Secretsのチェック
     if "GEMINI_API_KEY" not in st.secrets:
-        st.error("Secretsに 'GEMINI_API_KEY' が設定されていません。")
+        st.error("【エラー】Secretsに 'GEMINI_API_KEY' が設定されていません。")
         st.stop()
     
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     
+    # 利用可能なモデルを自動探索（Pro版/無料版問わず接続するため）
     try:
         models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        
+        # 優先順位: Flash(高速) -> Pro(高性能) -> 無印
         target = None
-        for name in ["models/gemini-1.5-flash", "models/gemini-1.5-pro", "models/gemini-pro"]:
-            if name in models:
-                target = name
+        priority_list = [
+            "models/gemini-1.5-flash", 
+            "models/gemini-1.5-pro", 
+            "models/gemini-1.5-flash-001",
+            "models/gemini-pro"
+        ]
+        
+        # 優先リストの中から、実際に使えるものを探す
+        for p in priority_list:
+            if p in models:
+                target = p
                 break
-        if not target and models: target = models[0]
-        if not target: raise Exception("利用可能なモデルが見つかりませんでした。")
+        
+        # 見つからなければリストの先頭を使う
+        if not target and models:
+            target = models[0]
+            
+        if not target:
+            raise Exception("利用可能なモデルが見つかりませんでした。")
+            
         return genai.GenerativeModel(target), target
     except Exception as e:
-        st.error(f"モデルのリスト取得に失敗しました: {e}")
+        st.error(f"AIモデルの接続に失敗しました: {e}")
         st.stop()
 
-model, model_name = init_gemini()
+# アプリ起動時にモデルを初期化
+model, model_name_used = init_gemini()
 
-# --- 2. 問題生成関数 ---
+# ==========================================
+# 2. 問題生成ロジック (AIへの指示)
+# ==========================================
 def generate_quiz(category_type):
     if category_type == "MECE":
-        instruction = "MECE（漏れなくダブりなく）に関する3択問題を作成。1つだけが正解であること。"
+        theme = "ビジネス課題におけるMECE（漏れなくダブりなく）の構造化"
+        instruction = "3つの選択肢のうち、1つだけが『完全にMECE』な切り口であること。"
     else:
-        instruction = "フェルミ推定（論理的な数式構築）に関する3択問題を作成。数値そのものではなく、立式のロジックを問うこと。"
+        theme = "フェルミ推定（未知の数値を論理的に導く計算式）"
+        instruction = "3つの選択肢のうち、1つだけが『最も筋の良い因数分解（計算式）』であること。"
 
     prompt = f"""
-    あなたは戦略コンサルタント育成トレーナーです。
-    実務3年目レベルの{category_type}の問題を1問作成し、以下のJSON形式(日本語)で出力してください。
-    {{
-        "title": "タイトル",
-        "q": "問題文（思考力を問う実戦的な内容）",
-        "opts": ["選択肢A", "選択肢B", "選択肢C"],
-        "cor": "正解の選択肢",
-        "exp": "ロジカルな解説（100文字程度）"
-    }}
-    【指示】{instruction}
-    """
-    try:
-        response = model.generate_content(prompt)
-        res_text = response.text.replace('```json', '').replace('```', '').strip()
-        return json.loads(res_text)
-    except Exception as e:
-        return {"title": "生成エラー", "q": f"エラー: {str(e)}", "opts": ["再試行"], "cor": "再試行", "exp": "APIの接続を確認してください。"}
-
-# --- 3. 音声再生 ---
-def play_correct_sound():
-    sound_url = "https://raw.githubusercontent.com/t-okada/assets/main/correct.mp3"
-    st.components.v1.html(f'<audio autoplay><source src="{sound_url}" type="audio/mpeg"></audio>', height=0)
-
-# --- 4. セッション管理 ---
-if 'game_active' not in st.session_state: st.session_state.game_active = False
-if 'score' not in st.session_state: st.session_state.score = 0
-if 'q_index' not in st.session_state: st.session_state.q_index = 0
-if 'answered' not in st.session_state: st.session_state.answered = False
-
-# --- 5. メイン画面 ---
-# --- ブラウザのタブ設定 ---
-st.set_page_config(
-    page_title="コンサル脳を鍛える思考力道場", 
-    page_icon="🥋", # 道場らしく武道の道着アイコン
-    layout="centered"
-)
-
-
-if not st.session_state.game_active:
-    st.title("🥋 コンサル脳を鍛える思考力道場")
-　　st.caption("〜 AIが生成する難問で、論理の「型」を研ぎ澄ます 〜")
-    st.success(f"接続成功: 使用モデル **{model_name.replace('models/', '')}**")
-    st.write("※制限時間はありません。じっくり考えてから回答してください。")
-    if st.button("▶ 特訓開始（MECE 3問 + フェルミ 2問）", type="primary"):
-        st.session_state.score = 0
-        st.session_state.q_index = 0
-        st.session_state.game_active = True
-        st.session_state.answered = False
-        with st.spinner("AIがMECE問題を生成中..."):
-            st.session_state.current_q = generate_quiz("MECE")
-        st.rerun()
-
-else:
-    if st.session_state.q_index >= 5:
-        st.balloons()
-        st.title("🏁 特訓終了！")
-        st.header(f"最終スコア: {st.session_state.score} / 5")
-        if st.button("ホームへ戻る"):
-            st.session_state.game_active = False
-            st.rerun()
-    else:
-        q = st.session_state.current_q
-        st.subheader(f"{'🧩 MECE' if st.session_state.q_index < 3 else '📐 フェルミ'} 第 {st.session_state.q_index + 1} 問")
-        st.info(f"**{q['title']}**\n\n{q['q']}")
-
-        if not st.session_state.answered:
-            # 回答ボタンの表示（タイマー処理を削除）
-            for opt in q['opts']:
-                if st.button(opt, key=f"{st.session_state.q_index}_{opt}", use_container_width=True):
-                    st.session_state.answered = True
-                    if opt == q['cor']:
-                        st.session_state.score += 1
-                        st.session_state.last_result = "CORRECT"
-                        play_correct_sound()
-                    else:
-                        st.session_state.last_result = "WRONG"
-                    st.rerun()
-        else:
-            # 結果表示
-            if st.session_state.last_result == "CORRECT": st.success("⭕ 正解！")
-            else: st.error(f"❌ 不正解... 正解は「{q['cor']}」")
-            
-            st.markdown(f"**AIの解説:** {q['exp']}")
-            if st.button("次の問題へ ➔", type="primary"):
-                st.session_state.q_index += 1
-                st.session_state.answered = False
-                if st.session_state.q_index < 5:
-                    next_cat = "MECE" if st.session_state.q_index < 3 else "フェルミ推定"
-                    with st.spinner(f"AIが{next_cat}問題を生成中..."):
-                        st.session_state.current_q = generate_quiz(next_cat)
-                st.rerun()
-
+    あなたは戦略コンサルタントを育成する『道場の師範』です。
+    実務3年目レベルの難易度で、以下のテーマの問題
