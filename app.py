@@ -2,84 +2,105 @@ import streamlit as st
 import google.generativeai as genai
 import json
 
-# --- 1. API設定（モデル自動検知機能） ---
+# ==========================================
+# 1. 最強のAPI接続 (全モデル検索ロジック)
+# ==========================================
 def init_gemini():
+    # Secretsチェック
     if "GEMINI_API_KEY" not in st.secrets:
-        st.error("設定エラー: Secretsに GEMINI_API_KEY がありません。")
+        st.error("エラー: Secretsに GEMINI_API_KEY が設定されていません。")
         st.stop()
     
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     
     try:
-        # 404エラー回避策：今使えるモデルのリストを取得
-        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        # 【ここがポイント】利用可能なモデルを全てリストアップする
+        all_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
         
-        # 優先的に使いたいモデルのキーワード
-        # あなたのProプランで最適なものを選びます
-        target = None
-        for keyword in ["1.5-flash", "1.5-pro", "gemini-pro"]:
-            for m_name in available_models:
-                if keyword in m_name:
-                    target = m_name
+        # 優先順位: 1.5 Flash (高速) -> 1.5 Pro (高性能) -> Pro (旧安定版)
+        # 部分一致で探すことで、バージョン番号が変わっても対応できる
+        target_model_name = None
+        priority_keywords = ["flash", "1.5-pro", "gemini-pro"]
+        
+        for keyword in priority_keywords:
+            for m in all_models:
+                if keyword in m:
+                    target_model_name = m
                     break
-            if target: break
+            if target_model_name: break
         
-        if not target:
-            target = available_models[0] # 何も見つからなければ最初の1つを使う
+        # もし優先モデルが見つからなくても、リストにある最初のモデルを使う（絶対につながる）
+        if not target_model_name and all_models:
+            target_model_name = all_models[0]
             
-        return genai.GenerativeModel(target), target
+        if not target_model_name:
+            st.error("利用可能なモデルが見つかりませんでした。")
+            st.stop()
+            
+        return genai.GenerativeModel(target_model_name), target_model_name
 
     except Exception as e:
-        st.error(f"API接続に失敗しました。キーを確認してください: {e}")
+        st.error(f"接続エラー: {e}")
         st.stop()
 
-# モデル初期化
-model, model_name = init_gemini()
+# モデルの初期化
+model, model_name_used = init_gemini()
 
-# --- 2. 問題生成関数（日常から実戦への難易度勾配） ---
+# ==========================================
+# 2. 問題生成 (日常→実戦の5段階)
+# ==========================================
 def generate_quiz(idx):
-    # マネージャー視点での難易度設計
-    # 第1問は日常、第2問は業務、第3問は営業実戦
+    # 難易度とシーンの設定
     if idx == 0:
-        cat, level, scene = "MECE", "初級(日常)", "日常生活（旅行の準備、冷蔵庫の整理、掃除の分担など）"
+        cat, level, scene = "MECE", "初級(日常)", "旅行の準備、冷蔵庫の整理、掃除の分担"
     elif idx == 1:
-        cat, level, scene = "MECE", "中級(業務)", "オフィスでの一般的な業務（会議のアジェンダ作り、資料の構成など）"
+        cat, level, scene = "MECE", "中級(業務)", "会議アジェンダ作成、タスクの優先順位"
     elif idx == 2:
-        cat, level, scene = "MECE", "上級(営業実戦)", "顧客課題の整理（ヒアリング内容の構造化、提案の柱立てなど）"
+        cat, level, scene = "MECE", "上級(営業実戦)", "顧客ヒアリングの整理、提案書の構成"
     elif idx == 3:
-        cat, level, scene = "フェルミ推定", "中級(日常)", "身近な数字の推計（街のコンビニの数、1日のスマホ使用時間など）"
+        cat, level, scene = "フェルミ推定", "初級(日常)", "日本にある電柱の数、コンビニの売上"
     else:
-        cat, level, scene = "フェルミ推定", "上級(営業実戦)", "営業分析（顧客の年間予算規模、自社サービスの潜在需要など）"
+        cat, level, scene = "フェルミ推定", "上級(営業実戦)", "顧客企業の年間予算、ターゲット市場規模"
 
     prompt = f"""
-    あなたは入社1〜3年目の若手を育てる営業マネージャーです。
-    「思考力の型」を鍛える問題を1問作成してください。
+    あなたは若手営業（1〜3年目）のメンターです。
+    以下の条件でクイズを1問作成してください。
 
-    【形式】{cat}
-    【難易度】{level}
+    【テーマ】{cat}
+    【レベル】{level}
     【シーン】{scene}
 
     指示:
-    - 3択問題とし、1つだけが論理的に最適な回答にすること。
-    - 解説は「営業現場でどう活かせるか」というマネジメント視点のアドバイスを含めること。
-    - JSON形式(日本語)のみを出力すること。
+    - 3択問題。
+    - 解説は「営業現場での活かし方」を含めること。
+    - 以下のJSON形式(日本語)のみを出力すること。
 
     {{
-        "title": "修行テーマ",
-        "q": "問い",
-        "opts": ["A", "B", "C"],
+        "title": "タイトル",
+        "q": "問題文",
+        "opts": ["選択肢A", "選択肢B", "選択肢C"],
         "ans_idx": 0,
-        "exp": "師範の指南（解説）"
+        "exp": "解説"
     }}
+    ※ ans_idx は正解の番号(0, 1, 2)です。
     """
+
     try:
-        res = model.generate_content(prompt)
-        text = res.text.replace('```json', '').replace('```', '').strip()
+        response = model.generate_content(prompt)
+        text = response.text.replace('```json', '').replace('```', '').strip()
         return json.loads(text)
     except:
-        return {"title": "通信エラー", "q": "再試行してください", "opts": ["A","B","C"], "ans_idx": 0, "exp": "エラー"}
+        return {
+            "title": "通信エラー", 
+            "q": "再試行してください", 
+            "opts": ["再試行"], 
+            "ans_idx": 0, 
+            "exp": "エラー"
+        }
 
-# --- 3. アプリ画面 ---
+# ==========================================
+# 3. アプリ画面
+# ==========================================
 st.set_page_config(page_title="営業思考道場", page_icon="🥋")
 
 if 'game' not in st.session_state: st.session_state.game = False
@@ -87,13 +108,13 @@ if 'score' not in st.session_state: st.session_state.score = 0
 if 'idx' not in st.session_state: st.session_state.idx = 0
 if 'ans' not in st.session_state: st.session_state.ans = False
 
-# --- 画面遷移 ---
+# --- スタート画面 ---
 if not st.session_state.game:
     st.title("🥋 営業×コンサル思考道場")
-    st.caption(f"使用中のAI師範: {model_name.replace('models/', '')}")
-    st.info("日常の整理術から、営業実戦のロジックまで。全5問の特訓です。")
+    st.caption(f"接続中のAI: {model_name_used.replace('models/', '')}") # 安心のため接続モデルを表示
+    st.info("日常の整理から営業実戦まで。全5問の思考特訓。")
     
-    if st.button("▶ 特訓を開始する", type="primary", use_container_width=True):
+    if st.button("▶ 入門する（特訓開始）", type="primary", use_container_width=True):
         st.session_state.game = True
         st.session_state.score = 0
         st.session_state.idx = 0
@@ -102,18 +123,21 @@ if not st.session_state.game:
             st.session_state.q = generate_quiz(0)
         st.rerun()
 
+# --- クイズ画面 ---
 else:
     if st.session_state.idx >= 5:
         st.balloons()
-        st.title("🏁 免許皆伝")
-        st.header(f"戦績: {st.session_state.score} / 5")
+        st.title("🏁 特訓完了")
+        st.header(f"結果: {st.session_state.score} / 5")
         if st.button("道場の入り口に戻る", use_container_width=True):
             st.session_state.game = False
             st.rerun()
+            
     else:
         q = st.session_state.q
-        level_icons = ["🟢 初級", "🟡 中級", "🔴 上級(営業実戦)", "🟡 初級・中級", "🔴 上級(営業実戦)"]
-        st.subheader(f"第{st.session_state.idx + 1}問：{level_icons[st.session_state.idx]}")
+        labels = ["🟢 初級(日常)", "🟡 中級(業務)", "🔴 上級(営業)", "🟡 推定(日常)", "🔴 推定(営業)"]
+        
+        st.subheader(f"第{st.session_state.idx + 1}問：{labels[st.session_state.idx]}")
         st.info(f"**{q['title']}**\n\n{q['q']}")
         
         if not st.session_state.ans:
@@ -127,13 +151,15 @@ else:
                         st.session_state.last_res = False
                     st.rerun()
         else:
-            if st.session_state.last_res: st.success("⭕ 正解（お見事！）")
+            if st.session_state.last_res: st.success("⭕ 正解！")
             else: st.error(f"❌ 不正解... 正解は「{q['opts'][q['ans_idx']]}」")
-            st.markdown(f"**【マネージャーのアドバイス】**\n{q['exp']}")
+            
+            st.markdown(f"**【指南】**\n{q['exp']}")
+            
             if st.button("次の立ち合いへ ➔", type="primary", use_container_width=True):
                 st.session_state.idx += 1
                 st.session_state.ans = False
                 if st.session_state.idx < 5:
-                    with st.spinner("次なる課題を生成中..."):
+                    with st.spinner("次の課題を準備中..."):
                         st.session_state.q = generate_quiz(st.session_state.idx)
                 st.rerun()
