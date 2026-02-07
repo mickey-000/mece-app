@@ -3,7 +3,7 @@ import google.generativeai as genai
 import json
 import time
 
-# --- 1. Gemini API設定 & モデル自動検出 ---
+# --- 1. Gemini API設定 & モデル総当たり接続 ---
 def configure_gemini():
     # Secretsからキーを取得
     if "GEMINI_API_KEY" not in st.secrets:
@@ -13,43 +13,48 @@ def configure_gemini():
     api_key = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=api_key)
 
-    # 利用可能なモデルを自動で探す
-    target_model_name = "gemini-pro" # 万が一のためのデフォルト
-    try:
-        # モデル一覧を取得
-        available_models = []
-        for m in genai.list_models():
-            if 'generateContent' in m.supported_generation_methods:
-                available_models.append(m.name)
-        
-        # 優先順位: 1.5-flash -> 1.5-pro -> gemini-pro
-        # "models/" という接頭辞がついている場合があるので部分一致で探す
-        flash_models = [m for m in available_models if "flash" in m.lower() and "1.5" in m]
-        pro_models = [m for m in available_models if "pro" in m.lower() and "1.5" in m]
-        
-        if flash_models:
-            target_model_name = flash_models[0] # 最新のFlashを使う
-        elif pro_models:
-            target_model_name = pro_models[0]
-        elif "models/gemini-pro" in available_models:
-            target_model_name = "models/gemini-pro"
-            
-    except Exception as e:
-        # 一覧取得に失敗した場合は、最も一般的な名前を試す
-        pass
+    # 試すモデルのリスト（新しい順・高性能順）
+    candidate_models = [
+        "gemini-1.5-flash",      # 本命：最新・高速
+        "gemini-1.5-pro",        # 対抗：高性能（Pro版ならこれがベスト）
+        "gemini-1.5-flash-001",  # バージョン指定版
+        "gemini-1.5-pro-001",
+        "gemini-1.0-pro",        # 旧安定版
+        "gemini-pro"             # 最終手段
+    ]
 
-    return genai.GenerativeModel(target_model_name), target_model_name
+    active_model = None
+    active_model_name = ""
 
-# モデルの初期化
+    # 順番に接続テストを行う
+    for model_name in candidate_models:
+        try:
+            model = genai.GenerativeModel(model_name)
+            # 軽い挨拶をして応答があるか確認
+            response = model.generate_content("Hello", request_options={"timeout": 5})
+            if response:
+                active_model = model
+                active_model_name = model_name
+                break # 成功したらループを抜ける
+        except Exception:
+            continue # ダメなら次のモデルへ
+
+    if not active_model:
+        st.error("すべてのモデルで接続に失敗しました。APIキーまたは契約状況を確認してください。")
+        st.stop()
+
+    return active_model, active_model_name
+
+# モデルの初期化（アプリ起動時に1回だけ実行）
 try:
-    model, model_name_used = configure_gemini()
+    with st.spinner("最適なAIモデルを探しています..."):
+        model, model_name_used = configure_gemini()
 except Exception as e:
-    st.error(f"AIの接続に失敗しました: {e}")
+    st.error(f"初期化エラー: {e}")
     st.stop()
 
 # --- 2. 問題生成関数 ---
 def generate_quiz(category_type):
-    # カテゴリに応じた詳細なプロンプトを作成
     if category_type == "MECE":
         detail = "ビジネス課題（売上、組織、工程など）を『漏れなくダブりなく』分解する切り口を問う問題。3択のうち1つだけが完璧なMECEであること。"
     else:
@@ -78,10 +83,8 @@ def generate_quiz(category_type):
     except Exception as e:
         return {
             "title": "生成エラー", 
-            "q": f"問題の生成に失敗しました。\n使用モデル: {model_name_used}\nエラー: {str(e)}", 
-            "opts": ["再読み込み"], 
-            "cor": "再読み込み", 
-            "exp": "AIの調子が悪いようです。もう一度試してみてください。"
+            "q": f"問題生成に失敗しました。\nモデル: {model_name_used}\nエラー: {str(e)}", 
+            "opts": ["再試行"], "cor": "再試行", "exp": "再読み込みしてください"
         }
 
 # --- 3. 音声再生 ---
@@ -96,18 +99,18 @@ if 'q_index' not in st.session_state: st.session_state.q_index = 0
 if 'answered' not in st.session_state: st.session_state.answered = False
 
 # --- 5. メイン画面 ---
-st.set_page_config(page_title="Biz Logic Gym AI", page_icon="🧠")
+st.set_page_config(page_title="Biz Logic Gym AI", page_icon="🤖")
 
 if not st.session_state.game_active:
-    st.title("🧠 Biz Logic Gym: AI Mode")
-    st.write(f"Gemini ({model_name_used.replace('models/', '')}) がその場で難問を作成します。")
+    st.title("🤖 Biz Logic Gym: AI Mode")
+    st.write(f"接続完了: **{model_name_used}** が問題を生成します。")
     
     if st.button("▶ 特訓開始", type="primary"):
         st.session_state.score = 0
         st.session_state.q_index = 0
         st.session_state.game_active = True
         st.session_state.answered = False
-        with st.spinner("AIがMECE問題を生成中..."):
+        with st.spinner("AIが問題を生成中..."):
             st.session_state.current_q = generate_quiz("MECE")
         st.rerun()
 
@@ -121,15 +124,14 @@ else:
             st.rerun()
     else:
         q = st.session_state.current_q
-        # 進行度の表示
+        
+        # カテゴリ表示
         cat_label = "🧩 MECE編" if st.session_state.q_index < 3 else "📐 フェルミ推定編"
         st.subheader(f"{cat_label} 第 {st.session_state.q_index + 1} 問")
         
-        # エラー表示対応
         if "生成エラー" in q['title']:
             st.error(q['q'])
-            if st.button("再試行"):
-                st.rerun()
+            if st.button("再試行"): st.rerun()
         else:
             st.info(f"**{q['title']}**\n\n{q['q']}")
 
@@ -145,7 +147,7 @@ else:
                             st.session_state.last_result = "WRONG"
                         st.rerun()
 
-                # タイマー表示
+                # タイマー
                 t_placeholder = st.empty()
                 for t in range(15, -1, -1):
                     t_placeholder.metric("⏳ 残り時間", f"{t}s")
@@ -164,7 +166,6 @@ else:
                     st.session_state.q_index += 1
                     st.session_state.answered = False
                     if st.session_state.q_index < 5:
-                        # 次のカテゴリを判定
                         next_cat = "MECE" if st.session_state.q_index < 3 else "フェルミ推定"
                         with st.spinner(f"AIが{next_cat}問題を生成中..."):
                             st.session_state.current_q = generate_quiz(next_cat)
