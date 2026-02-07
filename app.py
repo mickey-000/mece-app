@@ -11,30 +11,20 @@ def init_gemini():
     
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     
-    # 利用可能なモデルをスキャンして最適なものを選択
     try:
         models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        
-        # 優先順位を定義（新しい順・高性能順）
-        # Flash 1.5 -> Pro 1.5 -> その他利用可能なモデル
         target = None
         for name in ["models/gemini-1.5-flash", "models/gemini-1.5-pro", "models/gemini-pro"]:
             if name in models:
                 target = name
                 break
-        
-        if not target and models:
-            target = models[0]
-        
-        if not target:
-            raise Exception("利用可能なモデルが見つかりませんでした。")
-            
+        if not target and models: target = models[0]
+        if not target: raise Exception("利用可能なモデルが見つかりませんでした。")
         return genai.GenerativeModel(target), target
     except Exception as e:
         st.error(f"モデルのリスト取得に失敗しました: {e}")
         st.stop()
 
-# モデルの初期化
 model, model_name = init_gemini()
 
 # --- 2. 問題生成関数 ---
@@ -49,7 +39,7 @@ def generate_quiz(category_type):
     実務3年目レベルの{category_type}の問題を1問作成し、以下のJSON形式(日本語)で出力してください。
     {{
         "title": "タイトル",
-        "q": "問題文（15秒で理解できる短文）",
+        "q": "問題文（思考力を問う実戦的な内容）",
         "opts": ["選択肢A", "選択肢B", "選択肢C"],
         "cor": "正解の選択肢",
         "exp": "ロジカルな解説（100文字程度）"
@@ -61,7 +51,7 @@ def generate_quiz(category_type):
         res_text = response.text.replace('```json', '').replace('```', '').strip()
         return json.loads(res_text)
     except Exception as e:
-        return {"title": "通信エラー", "q": f"エラー: {str(e)}", "opts": ["再試行"], "cor": "再試行", "exp": "APIの接続を確認してください。"}
+        return {"title": "生成エラー", "q": f"エラー: {str(e)}", "opts": ["再試行"], "cor": "再試行", "exp": "APIの接続を確認してください。"}
 
 # --- 3. 音声再生 ---
 def play_correct_sound():
@@ -78,9 +68,10 @@ if 'answered' not in st.session_state: st.session_state.answered = False
 st.set_page_config(page_title="Biz Logic Gym AI", page_icon="🧠")
 
 if not st.session_state.game_active:
-    st.title("🧠 Biz Logic Gym: AI Mode")
-    st.success(f"接続成功: 使用モデル **{model_name}**")
-    if st.button("▶ 特訓開始", type="primary"):
+    st.title("🧠 Biz Logic Gym: Infinite")
+    st.success(f"接続成功: 使用モデル **{model_name.replace('models/', '')}**")
+    st.write("※制限時間はありません。じっくり考えてから回答してください。")
+    if st.button("▶ 特訓開始（MECE 3問 + フェルミ 2問）", type="primary"):
         st.session_state.score = 0
         st.session_state.q_index = 0
         st.session_state.game_active = True
@@ -103,6 +94,7 @@ else:
         st.info(f"**{q['title']}**\n\n{q['q']}")
 
         if not st.session_state.answered:
+            # 回答ボタンの表示（タイマー処理を削除）
             for opt in q['opts']:
                 if st.button(opt, key=f"{st.session_state.q_index}_{opt}", use_container_width=True):
                     st.session_state.answered = True
@@ -113,21 +105,12 @@ else:
                     else:
                         st.session_state.last_result = "WRONG"
                     st.rerun()
-
-            t_placeholder = st.empty()
-            for t in range(15, -1, -1):
-                t_placeholder.metric("⏳ 残り時間", f"{t}s")
-                if t == 0:
-                    st.session_state.answered = True
-                    st.session_state.last_result = "TIMEOUT"
-                    st.rerun()
-                time.sleep(1)
         else:
+            # 結果表示
             if st.session_state.last_result == "CORRECT": st.success("⭕ 正解！")
-            elif st.session_state.last_result == "TIMEOUT": st.warning("⏰ タイムアップ！")
             else: st.error(f"❌ 不正解... 正解は「{q['cor']}」")
             
-            st.markdown(f"**解説:** {q['exp']}")
+            st.markdown(f"**AIの解説:** {q['exp']}")
             if st.button("次の問題へ ➔", type="primary"):
                 st.session_state.q_index += 1
                 st.session_state.answered = False
