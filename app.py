@@ -2,7 +2,7 @@ import streamlit as st
 import google.generativeai as genai
 import json
 
-# --- 1. API設定（エラー自動回避機能付き） ---
+# --- 1. API設定 ---
 def init_gemini():
     # Secretsのチェック
     if "GEMINI_API_KEY" not in st.secrets:
@@ -12,10 +12,8 @@ def init_gemini():
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     
     try:
-        # 今使えるモデルをリストアップして、最適なものを自動で選ぶ
+        # 利用可能なモデルを探す
         available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        
-        # 優先順位: 1.5 Flash (高速・安定) -> 1.5 Pro -> Pro (旧型)
         priority = ["models/gemini-1.5-flash", "models/gemini-1.5-pro", "models/gemini-pro"]
         
         target_model = None
@@ -24,12 +22,11 @@ def init_gemini():
                 target_model = p
                 break
         
-        # 見つからなければ、とにかく使える最初のモデルを選ぶ
         if not target_model and available_models:
             target_model = available_models[0]
             
         if not target_model:
-            st.error("利用可能なAIモデルが見つかりませんでした。APIキーを確認してください。")
+            st.error("利用可能なAIモデルが見つかりませんでした。")
             st.stop()
             
         return genai.GenerativeModel(target_model)
@@ -38,12 +35,12 @@ def init_gemini():
         st.error(f"接続エラーが発生しました: {e}")
         st.stop()
 
-# モデルの初期化
+# モデル初期化
 model = init_gemini()
 
-# --- 2. 問題生成関数（日常→実戦ルート） ---
+# --- 2. 問題生成関数 ---
 def generate_quiz(idx):
-    # 難易度とシーンの分岐
+    # 難易度とシーン設定
     if idx == 0:
         cat, level, scene = "MECE", "初級(日常)", "旅行の準備、冷蔵庫の整理、家事の分担"
     elif idx == 1:
@@ -55,7 +52,8 @@ def generate_quiz(idx):
     else:
         cat, level, scene = "フェルミ推定", "上級(営業実戦)", "顧客の年間予算規模、ターゲット市場の規模"
 
-    # AIへの指示（プロンプト）
+    # プロンプト（AIへの指令書）
+    # 中括弧 {{ }} はJSON形式を指定するために必要です
     prompt = f"""
     あなたは若手営業（1〜3年目）のメンターです。
     以下の条件でクイズを1問作成してください。
@@ -80,9 +78,89 @@ def generate_quiz(idx):
         text = response.text.replace('```json', '').replace('```', '').strip()
         return json.loads(text)
     except:
-        # 万が一のエラー時のバックアップ問題
         return {
             "title": "通信エラー", 
             "q": "問題の生成に失敗しました。再試行してください。", 
             "opts": ["再試行"], 
-            "ans
+            "ans_idx": 0, 
+            "exp": "ネットワークの状態を確認してください。"
+        }
+
+# --- 3. アプリ画面構築 ---
+st.set_page_config(page_title="営業思考道場", page_icon="🥋")
+
+if 'game' not in st.session_state: st.session_state.game = False
+if 'score' not in st.session_state: st.session_state.score = 0
+if 'idx' not in st.session_state: st.session_state.idx = 0
+if 'ans' not in st.session_state: st.session_state.ans = False
+
+# スタート画面
+if not st.session_state.game:
+    st.title("🥋 営業×コンサル思考道場")
+    st.markdown("### 日常から実戦へ。論理の「型」を習得せよ。")
+    st.info("""
+    **【特訓メニュー】**
+    1. **日常MECE**: 身近な事象を構造化
+    2. **業務MECE**: 仕事のタスクを整理
+    3. **営業MECE**: 顧客課題を深掘り
+    4. **日常フェルミ**: 身近な数値を推計
+    5. **営業フェルミ**: 市場・予算を試算
+    """)
+    
+    if st.button("▶ 入門する（特訓開始）", type="primary", use_container_width=True):
+        st.session_state.game = True
+        st.session_state.score = 0
+        st.session_state.idx = 0
+        st.session_state.ans = False
+        with st.spinner("第一の課題を作成中..."):
+            st.session_state.q = generate_quiz(0)
+        st.rerun()
+
+# ゲーム画面
+else:
+    if st.session_state.idx >= 5:
+        st.balloons()
+        st.title("🏁 特訓完了")
+        score = st.session_state.score
+        st.header(f"結果: {score} / 5")
+        
+        if score == 5: st.subheader("【免許皆伝】素晴らしい。現場で活かしましょう。")
+        elif score >= 3: st.subheader("【高弟】基礎はできています。")
+        else: st.subheader("【門下生】日常から意識を変えましょう。")
+
+        if st.button("道場の入り口に戻る", use_container_width=True):
+            st.session_state.game = False
+            st.rerun()
+            
+    else:
+        q = st.session_state.q
+        level_labels = ["🟢 初級(日常)", "🟡 中級(業務)", "🔴 上級(営業)", "🟡 フェルミ(日常)", "🔴 フェルミ(営業)"]
+        
+        st.subheader(f"第{st.session_state.idx + 1}問：{level_labels[st.session_state.idx]}")
+        st.info(f"**{q['title']}**\n\n{q['q']}")
+        
+        if not st.session_state.ans:
+            for i, opt in enumerate(q['opts']):
+                if st.button(opt, key=f"btn_{st.session_state.idx}_{i}", use_container_width=True):
+                    st.session_state.ans = True
+                    if i == q['ans_idx']:
+                        st.session_state.last_res = True
+                        st.session_state.score += 1
+                    else:
+                        st.session_state.last_res = False
+                    st.rerun()
+        else:
+            if st.session_state.last_res: st.success("⭕ 正解！")
+            else: st.error(f"❌ 不正解... 正解は「{q['opts'][q['ans_idx']]}」")
+            
+            st.markdown(f"**【指南】**\n{q['exp']}")
+            
+            if st.button("次の立ち合いへ ➔", type="primary", use_container_width=True):
+                st.session_state.idx += 1
+                st.session_state.ans = False
+                if st.session_state.idx < 5:
+                    with st.spinner(f"次の課題を読み込み中..."):
+                        st.session_state.q = generate_quiz(st.session_state.idx)
+                st.rerun()
+
+# === コードここまで ===
