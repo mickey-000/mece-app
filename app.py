@@ -2,45 +2,49 @@ import streamlit as st
 import google.generativeai as genai
 import time
 import json
+import traceback # エラー詳細を表示するためのライブラリ
 
 # --- 1. Gemini API設定 ---
 try:
-    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    model = genai.GenerativeModel('gemini-1.5-flash')
-except:
-    st.error("APIキーが正しく設定されていません。")
+    # ここでキーを読み込んでいます
+    if "GEMINI_API_KEY" in st.secrets:
+        genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+        model = genai.GenerativeModel('gemini-1.5-flash')
+    else:
+        # Secretsにキーがない場合のエラー
+        st.error("【設定エラー】Secretsに 'GEMINI_API_KEY' が見つかりません。")
+        st.stop()
+except Exception as e:
+    st.error(f"【設定エラー】API設定中にエラーが発生しました: {e}")
     st.stop()
 
-# --- 2. 問題生成関数（カテゴリ指定版） ---
+# --- 2. 問題生成関数 ---
 def generate_quiz(category_type):
-    # カテゴリに応じた詳細なプロンプトを作成
     if category_type == "MECE":
-        detail = "ビジネス課題（売上、組織、工程など）を『漏れなくダブりなく』分解する切り口を問う問題。3択のうち1つだけが完璧なMECEであること。"
+        detail = "ビジネス課題を『漏れなくダブりなく』分解する切り口を問う問題。3択。"
     else:
-        detail = "未知の数値を推定するための『計算式（因数分解）』を問う問題。3択のうち1つだけが最も論理的で筋の良い数式であること。"
+        detail = "数値を推定するための『計算式』を問うフェルミ推定の問題。3択。"
 
     prompt = f"""
     あなたは戦略コンサルタントの育成トレーナーです。
-    以下の指示に従い、{category_type}の問題を1問作成してJSONで出力してください。
-
-    【難易度】コンサル実務3年目レベル
-    【テーマ】{detail}
-
-    出力形式（日本語のみ）:
+    {category_type}の問題を1問作成し、以下のJSON形式(日本語)で出力してください。
     {{
-        "title": "問題のタイトル",
-        "q": "問題文（15秒で理解できる短文）",
-        "opts": ["選択肢A", "選択肢B", "選択肢C"],
-        "cor": "正解の選択肢（opts内の文字列と完全一致）",
-        "exp": "なぜそれが正解か、ロジカルな解説（100文字程度）"
+        "title": "タイトル",
+        "q": "問題文",
+        "opts": ["A", "B", "C"],
+        "cor": "正解の選択肢",
+        "exp": "解説"
     }}
+    【テーマ】{detail}
     """
     try:
         response = model.generate_content(prompt)
         res_text = response.text.replace('```json', '').replace('```', '').strip()
         return json.loads(res_text)
-    except:
-        return {"title": "通信エラー", "q": "再読み込みしてください", "opts": ["A", "B", "C"], "cor": "A", "exp": "エラー"}
+    except Exception as e:
+        # ここでエラーの正体を画面に出します
+        error_msg = f"エラー詳細: {str(e)}"
+        return {"title": "通信エラー発生", "q": error_msg, "opts": ["再読込", "設定確認", "待機"], "cor": "再読込", "exp": "Secretsの設定か、APIキーの有効性を確認してください。"}
 
 # --- 3. 音声再生 ---
 def play_correct_sound():
@@ -54,68 +58,56 @@ if 'q_index' not in st.session_state: st.session_state.q_index = 0
 if 'answered' not in st.session_state: st.session_state.answered = False
 
 # --- 5. メイン画面 ---
-st.set_page_config(page_title="Biz Logic Gym 3+2", page_icon="⚡")
+st.set_page_config(page_title="Biz Logic Gym Debug", page_icon="🔧")
 
 if not st.session_state.game_active:
-    st.title("⚡ Biz Logic Gym: Hybrid")
-    st.write("MECE 3問 ＋ フェルミ推定 2問 の集中トレーニング。")
-    if st.button("▶ 特訓開始", type="primary"):
+    st.title("🔧 AI Logic Gym: Debug Mode")
+    st.write("エラーの原因を特定するためのモードです。")
+    if st.button("▶ テスト開始", type="primary"):
         st.session_state.score = 0
         st.session_state.q_index = 0
         st.session_state.game_active = True
         st.session_state.answered = False
-        with st.spinner("AIがMECE問題を生成中..."):
+        with st.spinner("AIに接続テスト中..."):
             st.session_state.current_q = generate_quiz("MECE")
         st.rerun()
 
 else:
     if st.session_state.q_index >= 5:
         st.balloons()
-        st.title("🏁 特訓終了！")
-        st.header(f"スコア: {st.session_state.score} / 5")
-        if st.button("ホームへ戻る"):
+        st.title("完了")
+        if st.button("戻る"):
             st.session_state.game_active = False
             st.rerun()
     else:
         q = st.session_state.current_q
-        # 進行度の表示
-        cat_label = "🧩 MECE編" if st.session_state.q_index < 3 else "📐 フェルミ推定編"
-        st.subheader(f"{cat_label} 第 {st.session_state.q_index + 1} 問")
-        st.info(f"**{q['title']}**\n\n{q['q']}")
+        st.subheader(f"第 {st.session_state.q_index + 1} 問")
+        
+        # エラー時は赤文字で表示
+        if "エラー詳細" in q['q']:
+            st.error(q['title'])
+            st.code(q['q'], language='text') # エラー内容をコピーしやすく表示
+            st.warning("上記のエラーメッセージを確認してください。")
+        else:
+            st.info(q['q'])
 
         if not st.session_state.answered:
             for opt in q['opts']:
                 if st.button(opt, key=opt, use_container_width=True):
                     st.session_state.answered = True
                     if opt == q['cor']:
-                        st.session_state.score += 1
                         st.session_state.last_result = "CORRECT"
-                        play_correct_sound()
                     else:
                         st.session_state.last_result = "WRONG"
                     st.rerun()
-
-            # タイマー表示
-            t_placeholder = st.empty()
-            for t in range(15, -1, -1):
-                t_placeholder.metric("⏳ 残り時間", f"{t}s")
-                if t == 0:
-                    st.session_state.answered = True
-                    st.session_state.last_result = "TIMEOUT"
-                    st.rerun()
-                time.sleep(1)
         else:
             if st.session_state.last_result == "CORRECT": st.success("⭕ 正解！")
-            elif st.session_state.last_result == "TIMEOUT": st.warning("⏰ タイムアップ！")
-            else: st.error(f"❌ 残念！ 正解は「{q['cor']}」")
-            
-            st.markdown(f"**解説:** {q['exp']}")
-            if st.button("次の問題へ ➔", type="primary"):
+            else: st.error(f"❌ 不正解... 正解は「{q['cor']}」")
+            st.write(q['exp'])
+            if st.button("次へ"):
                 st.session_state.q_index += 1
                 st.session_state.answered = False
                 if st.session_state.q_index < 5:
-                    # 次のカテゴリを判定
-                    next_cat = "MECE" if st.session_state.q_index < 3 else "フェルミ推定"
-                    with st.spinner(f"AIが{next_cat}問題を生成中..."):
-                        st.session_state.current_q = generate_quiz(next_cat)
+                    cat = "MECE" if st.session_state.q_index < 3 else "フェルミ"
+                    st.session_state.current_q = generate_quiz(cat)
                 st.rerun()
