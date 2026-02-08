@@ -2,39 +2,19 @@ import streamlit as st
 import google.generativeai as genai
 import json
 import random
-import time
 
 # ==========================================
 # 1. 接続設定
 # ==========================================
 def init_gemini():
-    # APIキーの存在確認
     if "GEMINI_API_KEY" not in st.secrets:
         st.error("Secrets設定エラー: 'GEMINI_API_KEY' がありません。")
         st.stop()
-    
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    
     try:
-        # 利用可能なモデルを全検索
         all_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        
-        # 優先順位: 1.5-flash -> 1.5-pro -> gemini-pro
-        target = None
-        for keyword in ["flash", "1.5-pro", "gemini-pro"]:
-            for m in all_models:
-                if keyword in m:
-                    target = m
-                    break
-            if target: break
-        
-        if not target and all_models: target = all_models[0]
-        if not target:
-            st.error("利用可能なモデルが見つかりませんでした。")
-            st.stop()
-            
+        target = next((m for keyword in ["flash", "1.5-pro"] for m in all_models if keyword in m), all_models[0])
         return genai.GenerativeModel(target)
-
     except Exception as e:
         st.error(f"接続エラー: {e}")
         st.stop()
@@ -42,56 +22,58 @@ def init_gemini():
 model = init_gemini()
 
 # ==========================================
-# 2. 音声再生機能 (URL参照方式で軽量化)
+# 2. 音声再生 (公式機能 st.audio を使用)
 # ==========================================
 def play_correct_sound():
-    # フリー素材の「ピンポン」音を使用 (コードが短くなりコピペ失敗を防げます)
-    sound_url = "https://www.soundjay.com/buttons/sounds/button-09.mp3"
-    
-    # HTMLタグを埋め込んで音を鳴らす
-    st.components.v1.html(
-        f"""
-        <audio autoplay>
-            <source src="{sound_url}" type="audio/mp3">
-        </audio>
+    # プレイヤーを画面から隠すCSS
+    st.markdown(
+        """
+        <style>
+            /* オーディオプレイヤーを非表示にする */
+            audio { display: none; }
+        </style>
         """,
-        height=0,
+        unsafe_allow_html=True
     )
+    # Streamlitの公式機能で自動再生 (SoundJayの無料素材)
+    try:
+        st.audio("https://www.soundjay.com/buttons/sounds/button-09.mp3", format="audio/mp3", autoplay=True)
+    except:
+        pass # 音が出なくてもエラーにはしない
 
 # ==========================================
-# 3. 問題生成 (ランダムシーン & シャッフル)
+# 3. 問題生成 (ABC問題の修正)
 # ==========================================
 def generate_quiz(idx):
-    # バリエーション豊かなシーン設定
+    # シーン設定
     if idx == 0:
         cat, level = "MECE", "初級(日常)"
-        scenes = ["冷蔵庫の整理", "旅行のパッキング", "防災リュックの中身", "大掃除の役割分担", "スーパーの買い物リスト", "本棚の整理"]
+        scenes = ["冷蔵庫の整理", "旅行のパッキング", "防災リュック", "大掃除の分担", "買い物リスト"]
     elif idx == 1:
         cat, level = "MECE", "中級(業務)"
-        scenes = ["会議のアジェンダ作成", "タスクの優先順位付け", "メールフォルダの整理", "オフィスの備品管理", "新人研修のカリキュラム作成"]
+        scenes = ["会議アジェンダ", "タスク優先順位", "メール整理", "備品管理", "新人研修"]
     elif idx == 2:
         cat, level = "MECE", "上級(営業実戦)"
-        scenes = ["顧客の潜在ニーズ分析", "提案書の構成要素", "失注理由の分析", "ターゲット顧客のセグメンテーション", "営業プロセスのボトルネック特定"]
+        scenes = ["顧客ニーズ分析", "提案書構成", "失注理由分析", "顧客セグメント", "ボトルネック特定"]
     elif idx == 3:
         cat, level = "フェルミ推定", "初級"
-        scenes = ["日本にある電柱の数", "国内のコンビニ店舗数", "日本にいる猫の数", "1日のスマホ利用時間", "東京ドームの容積", "日本にある自動販売機の数"]
+        scenes = ["電柱の数", "コンビニ店舗数", "猫の数", "スマホ利用時間", "自販機の数"]
     else:
         cat, level = "フェルミ推定", "上級"
-        scenes = ["顧客企業の年間IT予算", "新商品の市場規模", "全国の美容室の市場規模", "競合他社の売上推定", "ある製品の生涯顧客価値(LTV)"]
+        scenes = ["顧客のIT予算", "新商品市場規模", "美容室の市場規模", "競合売上", "LTV算出"]
 
-    # ランダムに1つ選ぶ
     selected_scene = random.choice(scenes)
 
+    # ★修正点：AIに「A. B. C. を書くな」と指示
     prompt = f"""
-    あなたは営業マネージャーです。若手向けに「{cat}」の問題を1問作成してください。
+    営業マネージャーとして、若手向けに「{cat}」の問題を1問作成せよ。
     レベル:{level} シーン:{selected_scene}
-    指示:
-    - 選択肢はA, B, Cの3択。
-    - 解説は営業現場での活かし方を含めること。
-    - フェルミ推定の場合は、選択肢を「数値」ではなく「計算式（分解の軸）」にすること。
-    - 正解の選択肢はランダムに配置してよい。
-
-    JSON形式のみ出力:
+    
+    【重要指示】
+    - 選択肢の文頭に「A.」「1.」などの記号は絶対に付けないこと。内容のみ記述せよ。
+    - フェルミ推定の選択肢は「計算式（分解の軸）」にすること。
+    
+    出力はJSONのみ:
     {{
         "title": "タイトル",
         "q": "問題文",
@@ -106,14 +88,22 @@ def generate_quiz(idx):
         text = res.text.replace('```json', '').replace('```', '').strip()
         data = json.loads(text)
         
-        # 選択肢のシャッフル処理 (バイアス除去)
+        # シャッフル処理
         opts = data['opts']
-        correct_text = opts[data['ans_idx']] # 正解の文言を保存
         
-        random.shuffle(opts) # 混ぜる
+        # 万が一AIが記号をつけてしまった場合のためのクリーニング処理
+        clean_opts = []
+        for opt in opts:
+            # "A. " や "1. " を削除して綺麗にする
+            cleaned = opt.replace("A.", "").replace("B.", "").replace("C.", "").replace("1.", "").replace("2.", "").replace("3.", "").strip()
+            clean_opts.append(cleaned)
+            
+        correct_text = clean_opts[data['ans_idx']] # 正解のテキストを保持
         
-        data['opts'] = opts
-        data['ans_idx'] = opts.index(correct_text) # 新しい正解の位置を探す
+        random.shuffle(clean_opts) # 選択肢を混ぜる
+        
+        data['opts'] = clean_opts
+        data['ans_idx'] = clean_opts.index(correct_text) # 新しい正解位置を特定
         
         return data
     except:
@@ -127,23 +117,19 @@ def generate_quiz(idx):
 # ==========================================
 st.set_page_config(page_title="営業思考道場", page_icon="🥋")
 
-# セッション変数の初期化
 if 'game' not in st.session_state: st.session_state.game = False
 if 'score' not in st.session_state: st.session_state.score = 0
 if 'idx' not in st.session_state: st.session_state.idx = 0
 if 'ans' not in st.session_state: st.session_state.ans = False
 if 'play_sound' not in st.session_state: st.session_state.play_sound = False
 
-# --- スタート画面 ---
 if not st.session_state.game:
     st.title("🥋 営業×コンサル思考道場")
-    
     st.info("""
     **【修業内容】 全5問**
     - **第1〜3問 (MECE)**: 漏れなくダブりなく構造化する力
     - **第4〜5問 (フェルミ推定)**: 未知の数値を論理的に導く力
     """)
-    
     st.markdown("答えの「数字」ではなく、導き出す「ロジック」を鍛える特訓です。")
     
     if st.button("▶ 特訓を開始する", type="primary", use_container_width=True):
@@ -155,36 +141,26 @@ if not st.session_state.game:
             st.session_state.q = generate_quiz(0)
         st.rerun()
 
-# --- クイズ画面 ---
 else:
-    # 音を鳴らす予約があれば実行
+    # 音声再生 (HTML埋め込みではなくst.audioを使用)
     if st.session_state.play_sound:
         play_correct_sound()
         st.session_state.play_sound = False 
 
-    # 全問終了時の判定
     if st.session_state.idx >= 5:
         st.balloons()
         st.title("🏁 特訓完了")
         score = st.session_state.score
-        
         st.header(f"戦績: {score} / 5")
         
-        # スコア別の称号表示
-        if score == 5:
-            st.success("【免許皆伝】 素晴らしい！師範級の論理力です。")
-        elif score >= 3:
-            st.info("【高弟】 基礎はできています。実戦で磨きをかけましょう。")
-        elif score >= 1:
-            st.warning("【書生】 まだまだ修行が必要です。ロジックの癖を見直しましょう。")
-        else:
-            st.error("【入門者】 まずは日常のことから構造化する癖をつけましょう。")
+        if score == 5: st.success("【免許皆伝】 素晴らしい！師範級の論理力です。")
+        elif score >= 3: st.info("【高弟】 基礎はできています。実戦で磨きをかけましょう。")
+        elif score >= 1: st.warning("【書生】 まだまだ修行が必要です。")
+        else: st.error("【入門者】 まずは日常のことから構造化する癖をつけましょう。")
 
         if st.button("道場の入り口に戻る", use_container_width=True):
             st.session_state.game = False
             st.rerun()
-            
-    # 問題出題中
     else:
         q = st.session_state.q
         labels = ["🟢 MECE(日常)", "🟡 MECE(業務)", "🔴 MECE(営業)", "🟡 フェルミ(日常)", "🔴 フェルミ(営業)"]
@@ -192,24 +168,20 @@ else:
         st.subheader(f"第{st.session_state.idx + 1}問：{labels[st.session_state.idx]}")
         st.info(f"**{q['title']}**\n\n{q['q']}")
         
-        # A. 未回答の状態
         if st.session_state.ans == False:
+            # 選択肢ボタン (A, B, C のラベルは付けず、ボタンの位置で判断させる)
             for i, opt in enumerate(q['opts']):
                 if st.button(opt, key=f"btn_{st.session_state.idx}_{i}", use_container_width=True):
                     st.session_state.ans = True
-                    # 正誤判定
                     if i == q['ans_idx']:
                         st.session_state.last_res = True
                         st.session_state.score += 1
-                        st.session_state.play_sound = True # 音を鳴らすフラグを立てる
+                        st.session_state.play_sound = True
                     else:
                         st.session_state.last_res = False
                     st.rerun()
-        
-        # B. 回答済みの状態
         else:
             correct_opt = q['opts'][q['ans_idx']]
-            
             if st.session_state.last_res:
                 st.success("⭕ 正解！その通り！")
             else:
