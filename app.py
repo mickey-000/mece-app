@@ -3,87 +3,94 @@ import google.generativeai as genai
 import json
 
 # ==========================================
-# 1. 全モデル検索 & 接続ロジック
+# 1. 堅牢なAPI接続 (全モデル検索 & エラー回避)
 # ==========================================
 def init_gemini():
-    # APIキーの確認
     if "GEMINI_API_KEY" not in st.secrets:
-        st.error("エラー: Secretsに GEMINI_API_KEY がありません。")
+        st.error("Secrets設定エラー: 'GEMINI_API_KEY' がありません。")
         st.stop()
     
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     
     try:
-        # 【重要】アカウントで使えるモデルを全てリストアップする
+        # 使えるモデルを全検索
         all_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
         
-        if not all_models:
-            st.error("利用可能なモデルが1つも見つかりませんでした。APIキーまたはプランを確認してください。")
-            st.stop()
-
-        # 優先順位: Flash -> Pro -> その他
-        # ※名前が少し違っても部分一致でヒットさせる
-        target_model = None
+        # 優先順位: 1.5-flash -> 1.5-pro -> gemini-pro
+        target = None
         for keyword in ["flash", "1.5-pro", "gemini-pro"]:
             for m in all_models:
                 if keyword in m:
-                    target_model = m
+                    target = m
                     break
-            if target_model: break
+            if target: break
         
-        # 優先モデルがなければ、リストの先頭（どれでもいいから動くやつ）を使う
-        if not target_model:
-            target_model = all_models[0]
+        if not target and all_models: target = all_models[0]
+        if not target:
+            st.error("利用可能なモデルが見つかりませんでした。")
+            st.stop()
             
-        return genai.GenerativeModel(target_model), target_model, all_models
+        return genai.GenerativeModel(target), target
 
     except Exception as e:
-        st.error(f"API接続時の致命的エラー: {e}")
+        st.error(f"API接続エラー: {e}")
         st.stop()
 
-# モデル初期化
-model, model_name_used, available_list = init_gemini()
+model, model_name_used = init_gemini()
 
 # ==========================================
-# 2. 問題生成 (エラーを隠さず表示する)
+# 2. 問題生成 (フェルミは「式」を問う形へ)
 # ==========================================
 def generate_quiz(idx):
+    # シーン設定
     scenes = [
-        ("MECE", "初級(日常)", "旅行の準備、冷蔵庫の整理"),
-        ("MECE", "中級(業務)", "会議アジェンダ、タスク整理"),
-        ("MECE", "上級(営業)", "顧客ヒアリング整理、提案構成"),
-        ("フェルミ", "初級", "コンビニの売上、電柱の数"),
-        ("フェルミ", "上級", "市場規模算出、顧客予算")
+        ("MECE", "初級(日常)", "旅行の準備、冷蔵庫の整理、家事の分担"),
+        ("MECE", "中級(業務)", "会議アジェンダ作成、タスクの優先順位"),
+        ("MECE", "上級(営業実戦)", "顧客ヒアリングの整理、提案書の構成"),
+        ("フェルミ推定", "初級(日常)", "日本にある電柱の数、コンビニの売上"),
+        ("フェルミ推定", "上級(営業実戦)", "顧客企業の年間予算、ターゲット市場規模")
     ]
     cat, level, scene = scenes[idx]
 
+    # ★ここが変更点：フェルミ推定なら「式」を答えさせる
+    if "フェルミ" in cat:
+        instruction = """
+        【重要：思考プロセスを問う問題】
+        - 選択肢に「具体的な数値（例: 100億円）」は絶対に入れないこと。
+        - 選択肢は「推定するための計算式（分解の軸）」にすること。
+        - 正解は、最も論理的で納得感のある分解式（MECE）であること。
+        - 例: 「売上」を問う場合 → 正解選択肢: 「客単価 × 客数 × 回転率」
+        """
+    else:
+        instruction = """
+        - 3択問題とし、1つだけが論理的に最適な回答にすること。
+        - 選択肢は具体的な行動や分類項目にすること。
+        """
+
     prompt = f"""
-    あなたは営業マネージャーです。若手向けに「{cat}」の問題を1問作成せよ。
-    レベル:{level} シーン:{scene}
-    出力は以下のJSON形式(日本語)のみ:
+    あなたは営業マネージャーです。若手向けに「{cat}」の問題を1問作成してください。
+    【レベル】{level} 【シーン】{scene}
+    
+    {instruction}
+
+    解説は「なぜその分解が妥当か」を営業視点で説くこと。
+    以下のJSON形式(日本語)のみを出力すること:
     {{
         "title": "タイトル",
         "q": "問題文",
-        "opts": ["A", "B", "C"],
+        "opts": ["選択肢A", "選択肢B", "選択肢C"],
         "ans_idx": 0,
         "exp": "解説"
     }}
+    ※ans_idxは0, 1, 2の数値。
     """
     
     try:
-        response = model.generate_content(prompt)
-        text = response.text.replace('```json', '').replace('```', '').strip()
+        res = model.generate_content(prompt)
+        text = res.text.replace('```json', '').replace('```', '').strip()
         return json.loads(text)
     except Exception as e:
-        # 【ここが修正点】エラーを隠さず、そのまま画面に出す
-        error_msg = str(e)
-        return {
-            "title": "⚠️ エラー発生", 
-            "q": f"システムエラーが発生しました。\n以下の英語メッセージを確認してください:\n\n{error_msg}", 
-            "opts": ["再試行"], 
-            "ans_idx": 0, 
-            "exp": "APIキーの制限、またはモデルのアクセス権限に問題がある可能性があります。"
-        }
+        return {"title": "エラー", "q": str(e), "opts": ["再試行"], "ans_idx": 0, "exp": "エラー"}
 
 # ==========================================
 # 3. アプリ画面
@@ -97,42 +104,32 @@ if 'ans' not in st.session_state: st.session_state.ans = False
 
 if not st.session_state.game:
     st.title("🥋 営業×コンサル思考道場")
-    
-    # デバッグ情報：どのモデルにつながったか表示
-    st.success(f"接続成功: {model_name_used.replace('models/', '')}")
-    with st.expander("詳細: 検出された全モデルリスト"):
-        st.write(available_list)
-        
-    st.info("日常の整理から営業実戦まで。全5問の特訓。")
+    st.caption(f"Power by {model_name_used.replace('models/', '')}")
+    st.info("答えの「数字」ではなく、導き出す「ロジック」を鍛える5番勝負。")
     
     if st.button("▶ 特訓を開始する", type="primary", use_container_width=True):
         st.session_state.game = True
         st.session_state.score = 0
         st.session_state.idx = 0
         st.session_state.ans = False
-        with st.spinner("課題を作成中..."):
+        with st.spinner("第一の課題を作成中..."):
             st.session_state.q = generate_quiz(0)
         st.rerun()
 
 else:
     if st.session_state.idx >= 5:
         st.balloons()
-        st.title("🏁 特訓完了")
-        st.header(f"結果: {st.session_state.score} / 5")
-        if st.button("戻る", use_container_width=True):
+        st.title("🏁 免許皆伝")
+        st.header(f"戦績: {st.session_state.score} / 5")
+        if st.button("道場の入り口に戻る", use_container_width=True):
             st.session_state.game = False
             st.rerun()
     else:
         q = st.session_state.q
+        labels = ["🟢 MECE(日常)", "🟡 MECE(業務)", "🔴 MECE(営業)", "🟡 フェルミ(日常)", "🔴 フェルミ(営業)"]
         
-        # エラー時は赤く表示
-        if "エラー" in q['title']:
-            st.error(q['title'])
-            st.warning(q['q']) # エラー詳細を表示
-        else:
-            labels = ["🟢 初級", "🟡 中級", "🔴 上級", "🟡 推定", "🔴 推定(実戦)"]
-            st.subheader(f"第{st.session_state.idx + 1}問：{labels[st.session_state.idx]}")
-            st.info(f"**{q['title']}**\n\n{q['q']}")
+        st.subheader(f"第{st.session_state.idx + 1}問：{labels[st.session_state.idx]}")
+        st.info(f"**{q['title']}**\n\n{q['q']}")
         
         if not st.session_state.ans:
             for i, opt in enumerate(q['opts']):
@@ -144,15 +141,3 @@ else:
                     else:
                         st.session_state.last_res = False
                     st.rerun()
-        else:
-            if st.session_state.last_res: st.success("⭕ 正解")
-            else: st.error(f"❌ 不正解... 正解: {q['opts'][q['ans_idx']]}")
-            st.markdown(f"**【解説】**\n{q['exp']}")
-            if st.button("次へ ➔", type="primary", use_container_width=True):
-                st.session_state.idx += 1
-                st.session_state.ans = False
-                if st.session_state.idx < 5:
-                    with st.spinner("生成中..."):
-                        st.session_state.q = generate_quiz(st.session_state.idx)
-                st.rerun()
-# === コピー終了 ===
