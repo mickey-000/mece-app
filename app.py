@@ -4,7 +4,6 @@ import json
 import random
 import base64
 import os
-import time
 
 # ==========================================
 # 1. アプリ設定 & API接続
@@ -17,8 +16,9 @@ def init_gemini():
         st.stop()
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     try:
-        # 確実に動作する1.5-flashを優先選択
-        return genai.GenerativeModel('gemini-1.5-flash')
+        all_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        target = next((m for keyword in ["flash", "1.5-pro"] for m in all_models if keyword in m), all_models[0])
+        return genai.GenerativeModel(target)
     except Exception as e:
         st.error(f"接続エラー: {e}")
         st.stop()
@@ -26,30 +26,56 @@ def init_gemini():
 model = init_gemini()
 
 # ==========================================
-# 2. 音声再生システム
+# 2. 音声設定 (サイドバー) & 再生システム
 # ==========================================
+
 with st.sidebar:
     st.header("⚙️ 設定")
     is_sound_on = st.toggle("🔊 音声モード (BGM/SE)", value=True)
 
 def play_sound(file_name):
-    if not is_sound_on: return
+    """ SE再生用（JavaScriptで0.5秒遅延させて再生） """
+    if not is_sound_on:
+        return
+
     if os.path.exists(file_name):
         with open(file_name, "rb") as f:
-            b64 = base64.b64encode(f.read()).decode()
-            md = f'<audio autoplay="true"><source src="data:audio/wav;base64,{b64}" type="audio/wav"></audio>'
+            data = f.read()
+            b64 = base64.b64encode(data).decode()
+            # JavaScriptのsetTimeoutを使用して500ms(0.5秒)遅らせる
+            md = f"""
+                <audio id="se_audio">
+                    <source src="data:audio/wav;base64,{b64}" type="audio/wav">
+                </audio>
+                <script>
+                    setTimeout(function() {{
+                        var audio = document.getElementById('se_audio');
+                        if (audio) {{
+                            audio.play();
+                        }}
+                    }}, 500);
+                </script>
+                """
             st.components.v1.html(md, height=0)
 
 def play_bgm(file_name):
-    if not is_sound_on: return
+    """ BGM再生用（ループ再生・即時開始） """
+    if not is_sound_on:
+        return
+
     if os.path.exists(file_name):
         with open(file_name, "rb") as f:
-            b64 = base64.b64encode(f.read()).decode()
-            md = f'<audio autoplay="true" loop="true"><source src="data:audio/wav;base64,{b64}" type="audio/wav"></audio>'
+            data = f.read()
+            b64 = base64.b64encode(data).decode()
+            md = f"""
+                <audio autoplay="true" loop="true">
+                    <source src="data:audio/wav;base64,{b64}" type="audio/wav">
+                </audio>
+                """
             st.components.v1.html(md, height=0)
 
 # ==========================================
-# 3. 問題生成ロジック (エラー可視化 & MECE厳格化)
+# 3. 問題生成ロジック
 # ==========================================
 def generate_quiz(idx):
     scenes_list = [
@@ -69,9 +95,9 @@ def generate_quiz(idx):
     あなたは営業マネージャーです。若手向けに「{cat}」の問題を1問作成してください。
     レベル:{level} シーン:{selected_scene}
     指示:
-    - 選択肢はA, B, Cの3択。
-    - ★重要: 「その他」「どれでもない」「上記すべて」といった選択肢は絶対に含めないこと。
-    - フェルミ推定の場合は、選択肢を具体的な「計算式（分解の軸）」にすること。
+    - 選択肢はA, B, Cの3択。文頭に記号(A.など)は不要。
+    - MECEの選択肢には「その他」「上記以外」「ケースバイケース」といった逃げの選択肢を含めず、必ず具体的で論理的な3つの切り口を提示してください。
+    - フェルミ推定の場合は、選択肢を「計算式（分解の軸）」にすること。
 
     JSON形式のみ出力:
     {{
@@ -93,10 +119,8 @@ def generate_quiz(idx):
         data['opts'] = opts
         data['ans_idx'] = opts.index(correct_text)
         return data
-    except Exception as e:
-        # エラーの正体を画面に表示する
-        st.error(f"🚨 生成エラーが発生しました: {e}")
-        return None
+    except:
+        return {"title": "再試行", "q": "通信エラーが発生しました。もう一度お試しください。", "opts": ["選択肢A","選択肢B","選択肢C"], "ans_idx": 0, "exp": "通信エラーです。"}
 
 # ==========================================
 # 4. アプリ画面
@@ -107,7 +131,7 @@ if 'score' not in st.session_state: st.session_state.score = 0
 if 'idx' not in st.session_state: st.session_state.idx = 0
 if 'ans' not in st.session_state: st.session_state.ans = False
 
-# SE再生
+# SE再生予約の消化
 if 'trigger_sound' in st.session_state:
     play_sound(st.session_state.trigger_sound)
     del st.session_state.trigger_sound
@@ -115,7 +139,13 @@ if 'trigger_sound' in st.session_state:
 # --- スタート画面 ---
 if not st.session_state.game:
     st.title("🥋 営業×コンサル思考道場")
-    st.info("**【修業内容】 全5問**\n- MECE / フェルミ推定を極めろ")
+    st.caption("👈 左のサイドバーで「音声のON/OFF」が切り替えられます")
+    
+    st.info("""
+    **【修業内容】 全5問**
+    - **第1〜3問 (MECE)**: 漏れなくダブりなく構造化する力
+    - **第4〜5問 (フェルミ推定)**: 未知の数値を論理的に導く力
+    """)
     if st.button("▶ 特訓を開始する", type="primary", use_container_width=True):
         st.session_state.game = True
         st.session_state.score = 0
@@ -128,50 +158,56 @@ if not st.session_state.game:
 # --- クイズ画面 ---
 else:
     if st.session_state.idx >= 5:
+        if 'played_final' not in st.session_state:
+            st.session_state.trigger_sound = "result.wav"
+            st.session_state.played_final = True
+            st.rerun()
+
         st.balloons()
         st.title("🏁 特訓完了")
-        st.header(f"戦績: {st.session_state.score} / 5")
+        score = st.session_state.score
+        st.header(f"戦績: {score} / 5")
+        
+        if score == 5: st.success("【免許皆伝】 素晴らしい！師範級の論理力です。")
+        elif score >= 3: st.info("【高弟】 基礎はできています。実戦で磨きをかけましょう。")
+        elif score >= 1: st.warning("【書生】 まだまだ修行が必要です。")
+        else: st.error("【入門者】 まずは日常のことから構造化する癖をつけましょう。")
+
         if st.button("道場の入り口に戻る", use_container_width=True):
+            if 'played_final' in st.session_state: del st.session_state.played_final
             st.session_state.game = False
             st.rerun()
+
     else:
         q = st.session_state.q
-        if q is None:
-            st.error("クイズの生成に失敗しました。再読み込みしてください。")
-            if st.button("戻る"):
-                st.session_state.game = False
-                st.rerun()
-        else:
-            labels = ["🟢 MECE(日常)", "🟡 MECE(業務)", "🔴 MECE(営業)", "🟡 フェルミ(日常)", "🔴 フェルミ(営業)"]
-            st.subheader(f"第{st.session_state.idx + 1}問：{labels[st.session_state.idx]}")
-            st.info(f"**{q['title']}**\n\n{q['q']}")
-            
-            if not st.session_state.ans:
-                play_bgm("thinking.wav")
-                for i, opt in enumerate(q['opts']):
-                    if st.button(opt, key=f"btn_{st.session_state.idx}_{i}", use_container_width=True):
-                        
-                        # --- 0.5秒のタメ（緊張感の演出） ---
-                        time.sleep(0.5)
-                        
-                        st.session_state.ans = True
-                        if i == q['ans_idx']:
-                            st.session_state.last_res = True
-                            st.session_state.score += 1
-                            st.session_state.trigger_sound = "success.wav"
-                        else:
-                            st.session_state.last_res = False
-                            st.session_state.trigger_sound = "failure.wav"
-                        st.rerun()
-            else:
-                if st.session_state.last_res: st.success("⭕ 正解！")
-                else: st.error(f"❌ 不正解... 正解は「{q['opts'][q['ans_idx']]}」")
-                st.markdown(f"**【解説】**\n{q['exp']}")
-                
-                if st.button("次の立ち合いへ ➔", type="primary", use_container_width=True):
-                    st.session_state.idx += 1
-                    st.session_state.ans = False
-                    if st.session_state.idx < 5:
-                        with st.spinner("師範が次の課題を生成中..."):
-                            st.session_state.q = generate_quiz(st.session_state.idx)
+        labels = ["🟢 MECE(日常)", "🟡 MECE(業務)", "🔴 MECE(営業)", "🟡 フェルミ(日常)", "🔴 フェルミ(営業)"]
+        st.subheader(f"第{st.session_state.idx + 1}問：{labels[st.session_state.idx]}")
+        st.info(f"**{q['title']}**\n\n{q['q']}")
+        
+        if st.session_state.ans == False:
+            play_bgm("thinking.wav")
+
+            for i, opt in enumerate(q['opts']):
+                if st.button(opt, key=f"btn_{st.session_state.idx}_{i}", use_container_width=True):
+                    st.session_state.ans = True
+                    if i == q['ans_idx']:
+                        st.session_state.last_res = True
+                        st.session_state.score += 1
+                        st.session_state.trigger_sound = "success.wav"
+                    else:
+                        st.session_state.last_res = False
+                        st.session_state.trigger_sound = "failure.wav"
                     st.rerun()
+        
+        else:
+            if st.session_state.last_res: st.success("⭕ 正解！その通り！")
+            else: st.error(f"❌ 不正解... 正解は「{q['opts'][q['ans_idx']]}」")
+            st.markdown(f"**【解説】**\n{q['exp']}")
+            
+            if st.button("次の立ち合いへ ➔", type="primary", use_container_width=True):
+                st.session_state.idx += 1
+                st.session_state.ans = False
+                if st.session_state.idx < 5:
+                    with st.spinner("師範が次の課題を生成中..."):
+                        st.session_state.q = generate_quiz(st.session_state.idx)
+                st.rerun()
