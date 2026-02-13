@@ -34,7 +34,7 @@ with st.sidebar:
     is_sound_on = st.toggle("🔊 音声モード (BGM/SE)", value=True)
 
 def play_sound(file_name):
-    """ SE再生用（JavaScriptで0.5秒遅延させて再生） """
+    """ SE再生用（0.5秒遅延） """
     if not is_sound_on:
         return
 
@@ -42,7 +42,6 @@ def play_sound(file_name):
         with open(file_name, "rb") as f:
             data = f.read()
             b64 = base64.b64encode(data).decode()
-            # JavaScriptのsetTimeoutを使用して500ms(0.5秒)遅らせる
             md = f"""
                 <audio id="se_audio">
                     <source src="data:audio/wav;base64,{b64}" type="audio/wav">
@@ -59,7 +58,7 @@ def play_sound(file_name):
             st.components.v1.html(md, height=0)
 
 def play_bgm(file_name):
-    """ BGM再生用（ループ再生・即時開始） """
+    """ BGM再生用 """
     if not is_sound_on:
         return
 
@@ -78,12 +77,13 @@ def play_bgm(file_name):
 # 3. 問題生成ロジック
 # ==========================================
 def generate_quiz(idx):
+    # 若手社員が直面しやすいシーンにアップデート
     scenes_list = [
-        ["冷蔵庫の整理", "旅行のパッキング", "防災リュック", "大掃除の分担", "買い物リスト"],
-        ["会議アジェンダ", "タスク優先順位", "メール整理", "備品管理", "新人研修"],
-        ["顧客ニーズ分析", "提案書構成", "失注理由分析", "顧客セグメント", "ボトルネック特定"],
-        ["電柱の数", "コンビニ店舗数", "猫の数", "スマホ利用時間", "自販機の数"],
-        ["顧客のIT予算", "新商品市場規模", "美容室の市場規模", "競合売上", "LTV算出"]
+        ["デスク周りの整理", "出張の持ち物準備", "飲み会の店選び", "共有フォルダの仕分け", "TODOリストの作成"],
+        ["日報の書き方", "議事録の項目作成", "先輩への進捗報告", "名刺の管理方法", "備品の補充ルール"],
+        ["初めてのテレアポ準備", "担当顧客の業界分析", "商談後の振り返り", "ヒアリング項目の整理", "失注アンケートの集計"],
+        ["オフィス街の弁当需要", "通勤電車の混雑数", "近所のコンビニの客数", "1日のメール受信件数", "社内自販機の売上"],
+        ["カフェの1日売上", "近隣オフィスのコピー用紙消費量", "同期の年間コーヒー代", "世の中のスマホケース需要", "1時間のテレアポ件数"]
     ]
     cats = ["MECE", "MECE", "MECE", "フェルミ推定", "フェルミ推定"]
     levels = ["初級(日常)", "中級(業務)", "上級(営業実戦)", "初級", "上級"]
@@ -92,12 +92,19 @@ def generate_quiz(idx):
     selected_scene = random.choice(scenes_list[idx])
 
     prompt = f"""
-    あなたは営業マネージャーです。若手向けに「{cat}」の問題を1問作成してください。
-    レベル:{level} シーン:{selected_scene}
+    あなたは若手社員の教育担当（メンター）です。
+    入社1〜3年目の若手社員が成長するために必要な「{cat}」の問題を1問作成してください。
+
+    設定:
+    - レベル: {level}
+    - シーン: {selected_scene}
+
     指示:
     - 選択肢はA, B, Cの3択。文頭に記号(A.など)は不要。
-    - MECEの選択肢には「その他」「上記以外」「ケースバイケース」といった逃げの選択肢を含めず、必ず具体的で論理的な3つの切り口を提示してください。
+    - MECEの問題では、「その他」「上記以外」「状況による」といった曖昧な選択肢を**絶対に含めない**でください。
+    - 若手社員が「現場でどう考えるべきか」を学べる、具体的で実践的な選択肢にしてください。
     - フェルミ推定の場合は、選択肢を「計算式（分解の軸）」にすること。
+    - 語り口は、若手に語りかけるような、丁寧で前向きなトーンにしてください。
 
     JSON形式のみ出力:
     {{
@@ -120,7 +127,7 @@ def generate_quiz(idx):
         data['ans_idx'] = opts.index(correct_text)
         return data
     except:
-        return {"title": "再試行", "q": "通信エラーが発生しました。もう一度お試しください。", "opts": ["選択肢A","選択肢B","選択肢C"], "ans_idx": 0, "exp": "通信エラーです。"}
+        return {"title": "再試行", "q": "通信エラーが発生しました。", "opts": ["A","B","C"], "ans_idx": 0, "exp": "エラー"}
 
 # ==========================================
 # 4. アプリ画面
@@ -131,27 +138,27 @@ if 'score' not in st.session_state: st.session_state.score = 0
 if 'idx' not in st.session_state: st.session_state.idx = 0
 if 'ans' not in st.session_state: st.session_state.ans = False
 
-# SE再生予約の消化
 if 'trigger_sound' in st.session_state:
     play_sound(st.session_state.trigger_sound)
     del st.session_state.trigger_sound
 
 # --- スタート画面 ---
 if not st.session_state.game:
-    st.title("🥋 営業×コンサル思考道場")
-    st.caption("👈 左のサイドバーで「音声のON/OFF」が切り替えられます")
+    st.title("🥋 若手営業のための思考道場")
+    st.caption("現場で役立つ論理的思考を身につけよう！")
     
     st.info("""
     **【修業内容】 全5問**
-    - **第1〜3問 (MECE)**: 漏れなくダブりなく構造化する力
-    - **第4〜5問 (フェルミ推定)**: 未知の数値を論理的に導く力
+    1〜3年目の若手社員が直面する課題をテーマにしています。
+    - **第1〜3問 (MECE)**: 情報を整理し、漏れなく考える力
+    - **第4〜5問 (フェルミ推定)**: 根拠を持って数字を予測する力
     """)
     if st.button("▶ 特訓を開始する", type="primary", use_container_width=True):
         st.session_state.game = True
         st.session_state.score = 0
         st.session_state.idx = 0
         st.session_state.ans = False
-        with st.spinner("師範が課題を生成中..."):
+        with st.spinner("先輩が課題を準備しています..."):
             st.session_state.q = generate_quiz(0)
         st.rerun()
 
@@ -164,14 +171,14 @@ else:
             st.rerun()
 
         st.balloons()
-        st.title("🏁 特訓完了")
+        st.title("🏁 修業完了")
         score = st.session_state.score
-        st.header(f"戦績: {score} / 5")
+        st.header(f"今回の評価: {score} / 5")
         
-        if score == 5: st.success("【免許皆伝】 素晴らしい！師範級の論理力です。")
-        elif score >= 3: st.info("【高弟】 基礎はできています。実戦で磨きをかけましょう。")
-        elif score >= 1: st.warning("【書生】 まだまだ修行が必要です。")
-        else: st.error("【入門者】 まずは日常のことから構造化する癖をつけましょう。")
+        if score == 5: st.success("【完璧】 素晴らしい！即戦力の論理思考の持ち主です。")
+        elif score >= 3: st.info("【合格】 基礎は身についています。自信を持って現場へ！")
+        elif score >= 1: st.warning("【見習い】 伸びしろがあります。一つずつ整理する癖をつけましょう。")
+        else: st.error("【要再試行】 焦らず、まずは身近な物の整理から始めてみましょう。")
 
         if st.button("道場の入り口に戻る", use_container_width=True):
             if 'played_final' in st.session_state: del st.session_state.played_final
@@ -200,14 +207,14 @@ else:
                     st.rerun()
         
         else:
-            if st.session_state.last_res: st.success("⭕ 正解！その通り！")
-            else: st.error(f"❌ 不正解... 正解は「{q['opts'][q['ans_idx']]}」")
-            st.markdown(f"**【解説】**\n{q['exp']}")
+            if st.session_state.last_res: st.success("⭕ 正解！その調子です！")
+            else: st.error(f"❌ 残念... 正解は「{q['opts'][q['ans_idx']]}」")
+            st.markdown(f"**【先輩のアドバイス】**\n{q['exp']}")
             
-            if st.button("次の立ち合いへ ➔", type="primary", use_container_width=True):
+            if st.button("次の課題へ ➔", type="primary", use_container_width=True):
                 st.session_state.idx += 1
                 st.session_state.ans = False
                 if st.session_state.idx < 5:
-                    with st.spinner("師範が次の課題を生成中..."):
+                    with st.spinner("次の課題を準備中..."):
                         st.session_state.q = generate_quiz(st.session_state.idx)
                 st.rerun()
