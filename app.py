@@ -158,7 +158,7 @@ if not st.session_state.game:
         st.session_state.score = 0
         st.session_state.idx = 0
         st.session_state.ans = False
-        with st.spinner("先輩が課題を準備しています..."):
+        with st.spinner("師範が課題を生成中..."):
             st.session_state.q = generate_quiz(0)
         st.rerun()
 
@@ -218,3 +218,4 @@ else:
                     with st.spinner("次の課題を準備中..."):
                         st.session_state.q = generate_quiz(st.session_state.idx)
                 st.rerun()
+
