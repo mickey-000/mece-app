@@ -354,9 +354,14 @@ _ABS_SPECS = {
         "具体例を2つだけ提示してください。ユーザーは（A）2つの共通点（構造）を見抜き、"
         "（B）同じ構造を持つ3つ目の具体例を自分で1つ作ります。"),
     5: ("第5問：最上級",
-        "抽象概念のお題（リスク分散／成長の仕組み／フィードバックループ／ボトルネック／"
-        "レバレッジ／インセンティブ設計／可視化／標準化 など）を1つ選び、その具体例を1つだけ"
-        "提示してください。ユーザーは同じ構造を持つ具体例を自分で2つ考えます。"),
+        "『抽象的なテーマ（お題）』を1つ選び、そのテーマに当てはまる具体例を“見本として1つだけ”"
+        "提示してください。テーマは（リスク分散／レバレッジ／ボトルネック／フィードバックループ／"
+        "インセンティブ設計／可視化／標準化／成長の仕組み など）から選ぶ。"
+        "出力は必ず次の3行の形にする（余計な説明は書かない）：\n"
+        "1行目『**【お題】** テーマ名（← その意味を10〜20字で補足）』\n"
+        "2行目『**【見本の具体例】** そのテーマに当てはまる例を1つ』\n"
+        "3行目『▶ **あなたへの問い：** このお題に当てはまる“別の具体例”を、見本以外にあなたが2つ挙げてください。』\n"
+        "『同じ構造を持つ』などの抽象的な言い回しは避け、上のとおり平易に書くこと。"),
 }
 
 
@@ -421,6 +426,14 @@ def apply_style():
     st.markdown(
         """
         <style>
+        @import url('https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@500;700;900&family=Noto+Sans+JP:wght@400;500;700&display=swap');
+
+        /* フォント（読みやすい日本語ゴシック） */
+        html, body, .stApp, [class*="css"], .stMarkdown, .stButton > button, textarea, input {
+            font-family: 'Noto Sans JP', -apple-system, 'Hiragino Sans',
+                         'Yu Gothic UI', 'Meiryo', sans-serif;
+        }
+
         /* 背景に奥行きのあるグラデーション */
         .stApp {
             background:
@@ -430,15 +443,20 @@ def apply_style():
         }
         .block-container { padding-top: 2.4rem; max-width: 880px; }
 
-        /* 見出しをグラデーション文字に */
-        h1 {
-            font-weight: 800 !important;
+        /* 見出し（読みやすい単色。グラデーションは廃止） */
+        h1, h2, h3 {
+            font-family: 'Zen Kaku Gothic New', 'Noto Sans JP', sans-serif;
+            color: #eef2fb !important;
+            -webkit-text-fill-color: #eef2fb;
             letter-spacing: .01em;
-            background: linear-gradient(92deg, #8e7bff 0%, #4fd1c5 100%);
-            -webkit-background-clip: text; background-clip: text;
-            -webkit-text-fill-color: transparent; color: transparent;
         }
-        h2, h3 { font-weight: 700 !important; letter-spacing: .01em; }
+        h1 {
+            font-weight: 900 !important;
+            line-height: 1.25;
+            border-left: 6px solid #7c5cff;
+            padding-left: .6rem;
+        }
+        h2, h3 { font-weight: 700 !important; }
 
         /* info / warning / success カードをガラス風に */
         div[data-testid="stAlert"] {
