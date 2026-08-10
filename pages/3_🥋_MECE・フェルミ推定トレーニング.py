@@ -103,13 +103,17 @@ def generate_quiz(idx):
     レベル:{level} シーン:{selected_scene}
     指示:
     - 選択肢はA, B, Cの3択。文頭に記号(A.など)は不要。
+    - 3つの選択肢は互いに重複せず、明確に異なる内容にすること。
     - フェルミ推定の場合は、選択肢を「計算式（分解の軸）」にすること。{mece_instruction}
+    - ans_idx は opts の中で正解にあたる要素の番号（0始まり）を正確に指定すること。
+    - exp（解説）では「選択肢1」「選択肢A」などの番号・記号で正解を指さないこと。
+      正解の内容そのものに触れながら、なぜ正しいのかを説明する。
 
     JSON形式のみ出力:
     {{
         "title": "タイトル",
         "q": "問題文",
-        "opts": ["選択肢1", "選択肢2", "選択肢3"],
+        "opts": ["選択肢1の内容", "選択肢2の内容", "選択肢3の内容"],
         "ans_idx": 0,
         "exp": "解説"
     }}
@@ -119,14 +123,17 @@ def generate_quiz(idx):
         text = res.text.replace('```json', '').replace('```', '').strip()
         data = json.loads(text)
 
-        opts = data['opts']
-        correct_text = opts[data['ans_idx']]
+        raw = [str(o).strip() for o in data['opts']]
+        correct_text = raw[int(data['ans_idx'])]      # 並べ替え前に正解の「文言」を確定
+        opts = list(dict.fromkeys(raw))               # 重複選択肢を除去（順序保持）
         random.shuffle(opts)
         data['opts'] = opts
+        data['correct_text'] = correct_text           # 判定は文言一致で行う
         data['ans_idx'] = opts.index(correct_text)
         return data
-    except:
-        return {"title": "再試行", "q": "通信エラー", "opts": ["A","B","C"], "ans_idx": 0, "exp": "エラー"}
+    except Exception:
+        return {"title": "再試行", "q": "通信エラー", "opts": ["A", "B", "C"],
+                "ans_idx": 0, "correct_text": "A", "exp": "エラー"}
 
 # ==========================================
 # 4. アプリ画面
@@ -199,10 +206,11 @@ else:
             # BGM再生 (スイッチがONの時のみ)
             play_bgm("thinking.wav")
 
+            correct_text = q.get('correct_text', q['opts'][q['ans_idx']])
             for i, opt in enumerate(q['opts']):
                 if st.button(opt, key=f"btn_{st.session_state.idx}_{i}", use_container_width=True):
                     st.session_state.ans = True
-                    if i == q['ans_idx']:
+                    if opt == correct_text:            # 位置ではなく「文言」で判定
                         st.session_state.last_res = True
                         st.session_state.score += 1
                         st.session_state.trigger_sound = "success.wav"
@@ -213,8 +221,9 @@ else:
 
         # B. 回答済み（解説表示）
         else:
+            correct_text = q.get('correct_text', q['opts'][q['ans_idx']])
             if st.session_state.last_res: st.success("⭕ 正解！その通り！")
-            else: st.error(f"❌ 不正解... 正解は「{q['opts'][q['ans_idx']]}」")
+            else: st.error(f"❌ 不正解... 正解は「{correct_text}」")
             st.markdown(f"**【解説】**\n{q['exp']}")
 
             if st.button("次の立ち合いへ ➔", type="primary", use_container_width=True):
