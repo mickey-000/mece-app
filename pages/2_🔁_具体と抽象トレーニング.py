@@ -5,6 +5,8 @@ from trainers_lib import (
     abs_hint,
     abs_feedback,
     apply_style,
+    play_se,
+    sound_toggle_sidebar,
     TOTAL_ABS,
 )
 
@@ -13,7 +15,14 @@ apply_style()
 st.title("🔁 具体と抽象の往復トレーニング")
 st.caption(f"バラバラな事象から共通の『構造』を見抜く、全{TOTAL_ABS}問のステップアップ特訓です。")
 
+sound_toggle_sidebar()
+
 ss = st.session_state
+
+# 効果音の予約再生
+if ss.get("abs_play"):
+    play_se(ss.abs_play)
+    ss.abs_play = None
 
 # ---- 状態の初期化 ----
 if "abs_stage" not in ss:
@@ -96,6 +105,7 @@ else:
                 with st.spinner("師範が解説中..."):
                     ss.abs_feedback = abs_feedback(q, ss.abs_problem, ans)
                 ss.abs_stage = "feedback"
+                ss.abs_play = "success.wav"
                 st.rerun()
 
     # --- 解説表示 ---
@@ -112,6 +122,7 @@ else:
         else:
             if st.button("🏁 結果を見る", type="primary", use_container_width=True):
                 ss.abs_stage = "done"
+                ss.abs_play = "result.wav"
                 st.rerun()
 
 # ---- サイドバー：やり直し ----

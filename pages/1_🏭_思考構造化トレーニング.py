@@ -4,6 +4,8 @@ from trainers_lib import (
     mece_generate_question,
     mece_feedback,
     apply_style,
+    play_se,
+    sound_toggle_sidebar,
     DEFINITIONS_MD,
     TOTAL_MECE,
 )
@@ -13,7 +15,14 @@ apply_style()
 st.title("🏭 思考構造化トレーニング")
 st.caption(f"製造業の現場発言を ①事象・②問題・③課題・④その他 に切り分ける、全{TOTAL_MECE}問の特訓です。")
 
+sound_toggle_sidebar()
+
 ss = st.session_state
+
+# 効果音の予約再生（送信・完了のタイミングで鳴らす）
+if ss.get("mece_play"):
+    play_se(ss.mece_play)
+    ss.mece_play = None
 
 # ---- 状態の初期化 ----
 if "mece_stage" not in ss:
@@ -89,6 +98,7 @@ else:
             with st.spinner("師範が講評中..."):
                 ss.mece_feedback = mece_feedback(ss.mece_problem, a1, a2, a3, a4)
             ss.mece_stage = "feedback"
+            ss.mece_play = "success.wav"
             st.rerun()
 
     # --- 講評表示 ---
@@ -111,6 +121,7 @@ else:
         else:
             if st.button("🏁 結果を見る", type="primary", use_container_width=True):
                 ss.mece_stage = "done"
+                ss.mece_play = "result.wav"
                 st.rerun()
 
 # ---- サイドバー：やり直し ----

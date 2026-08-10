@@ -479,3 +479,37 @@ def apply_style():
         """,
         unsafe_allow_html=True,
     )
+
+
+# ==========================================================
+# 効果音（既存クイズ道場と同じ .wav を再生）
+# ==========================================================
+import os as _os
+import base64 as _base64
+import streamlit.components.v1 as _components
+
+_BASE_DIR = _os.path.dirname(_os.path.abspath(__file__))
+
+
+def sound_toggle_sidebar():
+    """サイドバーに効果音ON/OFFトグルを置く。"""
+    with st.sidebar:
+        st.toggle("🔊 効果音", value=True, key="sound_on")
+
+
+def play_se(file_name):
+    """効果音を1回鳴らす（sound_on が False のときは鳴らさない）。"""
+    if not st.session_state.get("sound_on", True):
+        return
+    path = _os.path.join(_BASE_DIR, file_name)
+    if not _os.path.exists(path):
+        return
+    with open(path, "rb") as f:
+        b64 = _base64.b64encode(f.read()).decode()
+    _components.html(
+        f'<audio id="se" autoplay><source src="data:audio/wav;base64,{b64}" '
+        f'type="audio/wav"></audio>'
+        f'<script>const a=document.getElementById("se");'
+        f'if(a){{a.play().catch(()=>{{}});}}</script>',
+        height=0,
+    )
