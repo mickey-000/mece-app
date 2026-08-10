@@ -8,7 +8,7 @@ import os
 # ==========================================
 # 1. アプリ設定 & API接続
 # ==========================================
-st.set_page_config(page_title="コンサル営業思考道場", page_icon="🥋")
+st.set_page_config(page_title="MECE・フェルミ推定トレーニング", page_icon="🥋")
 
 from trainers_lib import apply_style
 apply_style()
@@ -145,7 +145,7 @@ if 'trigger_sound' in st.session_state:
 
 # --- スタート画面 ---
 if not st.session_state.game:
-    st.title("🥋 営業×コンサル思考道場")
+    st.title("🥋 MECE・フェルミ推定トレーニング")
     st.caption("👈 左のサイドバーで「音声のON/OFF」が切り替えられます")
 
     st.info("""

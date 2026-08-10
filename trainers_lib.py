@@ -426,12 +426,13 @@ def apply_style():
     st.markdown(
         """
         <style>
-        @import url('https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@500;700;900&family=Noto+Sans+JP:wght@400;500;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@600;700;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap');
 
-        /* フォント（読みやすい日本語ゴシック） */
+        /* フォント（本文：上品なゴシック） */
         html, body, .stApp, [class*="css"], .stMarkdown, .stButton > button, textarea, input {
-            font-family: 'Noto Sans JP', -apple-system, 'Hiragino Sans',
+            font-family: 'Zen Kaku Gothic New', -apple-system, 'Hiragino Sans',
                          'Yu Gothic UI', 'Meiryo', sans-serif;
+            letter-spacing: .01em;
         }
 
         /* 背景に奥行きのあるグラデーション */
@@ -445,10 +446,10 @@ def apply_style():
 
         /* 見出し（読みやすい単色。グラデーションは廃止） */
         h1, h2, h3 {
-            font-family: 'Zen Kaku Gothic New', 'Noto Sans JP', sans-serif;
+            font-family: 'Shippori Mincho', 'Zen Kaku Gothic New', serif;
             color: #eef2fb !important;
             -webkit-text-fill-color: #eef2fb;
-            letter-spacing: .01em;
+            letter-spacing: .02em;
         }
         h1 {
             font-weight: 900 !important;
