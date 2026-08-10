@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
+import pandas as pd
 from trainers_lib import (
     mece_generate_question,
     mece_feedback,
@@ -112,7 +113,29 @@ else:
                 f"**④その他**：{a4 or '（未記入）'}"
             )
         with st.chat_message("assistant", avatar="🏭"):
-            st.markdown(ss.mece_feedback)
+            fb = ss.mece_feedback
+            if isinstance(fb, dict) and "model_answer" in fb:
+                if fb.get("good"):
+                    st.markdown(f"**👍 良かった点**\n\n{fb['good']}")
+                if fb.get("improve"):
+                    st.markdown(f"**🔧 改善ポイント**\n\n{fb['improve']}")
+                st.markdown("**📋 模範解答**")
+                ma = fb.get("model_answer", {})
+                df = pd.DataFrame(
+                    [
+                        ["① 事象", ma.get("事象", "")],
+                        ["② 問題", ma.get("問題", "")],
+                        ["③ 課題", ma.get("課題", "")],
+                        ["④ その他", ma.get("その他", "")],
+                    ],
+                    columns=["区分", "内容"],
+                )
+                st.table(df.set_index("区分"))
+                if fb.get("advice"):
+                    st.markdown(f"**💡 ひとことアドバイス**\n\n{fb['advice']}")
+            else:
+                # 予期しない形式のときはそのまま表示
+                st.markdown(fb.get("_raw", "") if isinstance(fb, dict) else str(fb))
 
         if ss.mece_q < TOTAL_MECE:
             if st.button("次の問題へ ➔", type="primary", use_container_width=True):
