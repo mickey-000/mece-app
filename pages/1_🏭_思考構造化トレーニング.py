@@ -3,11 +3,13 @@ import streamlit as st
 from trainers_lib import (
     mece_generate_question,
     mece_feedback,
+    apply_style,
     DEFINITIONS_MD,
     TOTAL_MECE,
 )
 
 st.set_page_config(page_title="思考構造化トレーニング", page_icon="🏭")
+apply_style()
 st.title("🏭 思考構造化トレーニング")
 st.caption(f"製造業の現場発言を ①事象・②問題・③課題・④その他 に切り分ける、全{TOTAL_MECE}問の特訓です。")
 

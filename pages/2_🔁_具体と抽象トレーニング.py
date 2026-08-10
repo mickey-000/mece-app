@@ -4,10 +4,12 @@ from trainers_lib import (
     abs_generate_question,
     abs_hint,
     abs_feedback,
+    apply_style,
     TOTAL_ABS,
 )
 
 st.set_page_config(page_title="具体と抽象の往復トレーニング", page_icon="🔁")
+apply_style()
 st.title("🔁 具体と抽象の往復トレーニング")
 st.caption(f"バラバラな事象から共通の『構造』を見抜く、全{TOTAL_ABS}問のステップアップ特訓です。")
 
@@ -49,7 +51,8 @@ if ss.abs_stage == "intro":
         "- **第3問（実践）**：営業・コンサルの出来事3つの共通点を見抜く\n"
         "- **第4問（上級）**：2つの例の共通点＋同じ構造の3つ目を自作\n"
         "- **第5問（最上級）**：お題に対し、同じ構造の具体例を2つ自作\n\n"
-        "各問、回答すると師範（AI）が解説します。第4・5問は「💡 ヒント」も使えます。"
+        "答えは1つではありません。**わからなければ、遠慮なく「💡 ヒントをもらう」を押してください。**"
+        "回答すると師範（AI）が解説します。"
     )
     if st.button("▶ 特訓を開始する", type="primary", use_container_width=True):
         _next_question()
@@ -79,6 +82,7 @@ else:
 
         ans = st.text_area("✍️ あなたの回答", key=f"ans_{q}", height=120,
                            placeholder="思いついた共通点や構造を、自由に書いてください。")
+        st.caption("わからないときは 💡 ヒント を押すと、答えは言わずに考え方の切り口を教えます。")
 
         c1, c2 = st.columns([1, 2])
         with c1:

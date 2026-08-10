@@ -10,6 +10,9 @@ import os
 # ==========================================
 st.set_page_config(page_title="コンサル営業思考道場", page_icon="🥋")
 
+from trainers_lib import apply_style
+apply_style()
+
 def init_gemini():
     if "GEMINI_API_KEY" not in st.secrets:
         st.error("Secrets設定エラー: 'GEMINI_API_KEY' がありません。")

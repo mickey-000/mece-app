@@ -309,12 +309,20 @@ ABS_ROLE = ("あなたは営業・コンサルの若手を対象に「具体と�
 
 _ABS_SPECS = {
     1: ("第1問：初級",
-        "日常的なモノを3つ提示してください。家電・乗り物・道具・自然物・施設などから"
-        "ジャンルを1つ選ぶ。ユーザーはこの3つに共通する『構造・仕組み』を考えます。"),
+        "身近な『モノ・対象』を3つ提示してください。ジャンルは毎回大きく変えること"
+        "（家電／乗り物／道具／文房具／建物・施設／自然物・自然現象／動物／植物／食べ物／"
+        "飲み物／スポーツ／楽器／天体／体の器官 などから、毎回違うジャンルを選ぶ）。"
+        "『身近な道具』ばかりに偏らせず、意外な組み合わせも歓迎。"
+        "ユーザーはこの3つに共通する『構造・仕組み・役割』を考えます。"),
     2: ("第2問：中級",
-        "さまざまなビジネスモデルやサービスを3つ提示してください。サブスクリプション型・"
-        "フリーミアム型・成果報酬型・プラットフォーム型・シェアリング型など多様なモデルから"
-        "ランダムに選ぶ。ユーザーは3つの共通点（構造）を考えます。"),
+        "一見バラバラで共通点がなさそうな、実在の企業・店・サービス・仕組みを3つ提示して"
+        "ください。例：『回転寿司・IKEA・セルフ式ガソリンスタンド』（隠れた共通構造は"
+        "“本来お店がやる作業を客にやらせてコストを下げるセルフサービス”）のように、"
+        "表面は無関係でも実は同じ構造を持つ組み合わせにする。隠れた共通構造は毎回変えること"
+        "（セルフサービス／本体は安く消耗品で稼ぐ／プラットフォーム／会員制・囲い込み／"
+        "体験や希少性の演出／あえての逆張り／ボトルネックの解消 など）。"
+        "サブスクリプションばかりに偏らせないこと。"
+        "ユーザーはこの3つの“意外な共通点（構造）”を考えます。"),
     3: ("第3問：実践",
         "営業現場やコンサル業務での出来事を3つ提示してください。顧客対応・提案活動・"
         "社内調整・トラブル対応などからシーンを選ぶ。ユーザーは3つの共通点（構造）を考えます。"),
@@ -379,3 +387,95 @@ def abs_feedback(n, problem, answer):
 
 専門用語を使いすぎず、本質を突いた平易な言葉で。ユーザーのやる気が続くよう前向きに。"""
     return _oneshot(ABS_ROLE, user)
+
+
+# ==========================================================
+# 見た目（デザイン）を整えるCSS
+# ==========================================================
+def apply_style():
+    """各ページ冒頭で呼ぶと、モダンな見た目のCSSを適用する。"""
+    st.markdown(
+        """
+        <style>
+        /* 背景に奥行きのあるグラデーション */
+        .stApp {
+            background:
+              radial-gradient(1100px 620px at 12% -12%, #23305a 0%, rgba(35,48,90,0) 55%),
+              radial-gradient(900px 520px at 110% 0%, #14324a 0%, rgba(20,50,74,0) 50%),
+              #0b0e16;
+        }
+        .block-container { padding-top: 2.4rem; max-width: 880px; }
+
+        /* 見出しをグラデーション文字に */
+        h1 {
+            font-weight: 800 !important;
+            letter-spacing: .01em;
+            background: linear-gradient(92deg, #8e7bff 0%, #4fd1c5 100%);
+            -webkit-background-clip: text; background-clip: text;
+            -webkit-text-fill-color: transparent; color: transparent;
+        }
+        h2, h3 { font-weight: 700 !important; letter-spacing: .01em; }
+
+        /* info / warning / success カードをガラス風に */
+        div[data-testid="stAlert"] {
+            border-radius: 16px;
+            border: 1px solid rgba(255,255,255,.09);
+            background: rgba(255,255,255,.035);
+            backdrop-filter: blur(6px);
+            box-shadow: 0 10px 34px rgba(0,0,0,.30);
+            padding: 1rem 1.15rem;
+        }
+
+        /* 入力欄 */
+        textarea, input, .stTextArea textarea {
+            border-radius: 12px !important;
+            background: rgba(255,255,255,.04) !important;
+            border: 1px solid rgba(255,255,255,.12) !important;
+        }
+        textarea:focus { border-color: #7c5cff !important; box-shadow: 0 0 0 2px rgba(124,92,255,.35) !important; }
+
+        /* ボタン全般 */
+        .stButton > button {
+            border-radius: 12px;
+            font-weight: 700;
+            padding: .55rem 1rem;
+            border: 1px solid rgba(255,255,255,.14);
+            background: rgba(255,255,255,.05);
+            color: #eef0f6;
+            transition: transform .06s ease, box-shadow .2s ease, border-color .2s ease;
+        }
+        .stButton > button:hover {
+            transform: translateY(-1px);
+            border-color: #7c5cff;
+            box-shadow: 0 8px 22px rgba(124,92,255,.30);
+        }
+        /* プライマリボタンはグラデーション */
+        .stButton > button[kind="primary"],
+        button[data-testid="baseButton-primary"] {
+            background: linear-gradient(92deg, #7c5cff 0%, #4fd1c5 100%) !important;
+            border: none !important;
+            color: #0b0e16 !important;
+        }
+        .stButton > button[kind="primary"]:hover { filter: brightness(1.05); }
+
+        /* 進捗バー */
+        .stProgress > div > div > div > div {
+            background: linear-gradient(92deg, #7c5cff 0%, #4fd1c5 100%);
+        }
+
+        /* チャット吹き出し */
+        div[data-testid="stChatMessage"] {
+            border-radius: 16px;
+            background: rgba(255,255,255,.035);
+            border: 1px solid rgba(255,255,255,.07);
+        }
+
+        /* サイドバー */
+        section[data-testid="stSidebar"] {
+            background: rgba(10,13,22,.75);
+            border-right: 1px solid rgba(255,255,255,.06);
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
